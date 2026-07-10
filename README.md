@@ -7,6 +7,8 @@
 
 > **⚠️ Disclaimer:** This is **not** an official OptiScaler project. I am not affiliated with the OptiScaler team. This is a personal project developed without any commercial purpose. Anyone is free to try and use this software at their own risk.
 
+> **🔱 Fork note:** This is a fork of [Agustinm28/Optiscaler-Client](https://github.com/Agustinm28/Optiscaler-Client) (GPL-3.0-or-later). It adds a **custom FSR 4.x DLL** feature: the app can install a **user-supplied** `amdxcffx64.dll` into games. This repository contains **no AMD binaries and no download links to them** — you must source the DLL yourself. It also adds GitHub Actions CI and cross-platform release builds. All upstream credit belongs to the original author and the OptiScaler team.
+
 **OptiScaler Client** is a modern, high-performance desktop utility designed to simplify the installation, management, and update of the **OptiScaler** mod across your entire game library. Built with **C#** and **Avalonia UI**.
 
 ---
@@ -53,6 +55,7 @@
 - **Fakenvapi** — Compatibility layer for **AMD/Intel GPUs**, installed alongside OptiScaler when needed.
 - **Nukem's DLSSG-to-FSR3** — Frame generation bridge that converts DLSS Frame Gen to FSR3.
 - **FSR 4 INT8 Extras** — INT8 shader injection for non-RDNA 4 GPUs.
+- **FSR 4.x Custom DLL (bring your own)** — *fork addition:* installs a **user-supplied** `amdxcffx64.dll` (e.g. a newer FSR 4.1.x INT8 build) next to the game executable, where OptiScaler loads it before the driver store. See [Custom FSR 4 DLL](#-custom-fsr-4-dll-bring-your-own) below.
 - **OptiPatcher** — ASI plugin loader, automatically configured with `LoadAsiPlugins=true` in OptiScaler.ini.
 
 ### Profiles
@@ -131,6 +134,41 @@ Full interface translation in **14 languages**:
 - **Quick Uninstall** — Click the Quick Install button on any game that already has OptiScaler installed.
 - **Manage → Uninstall** — Open the game management window and click **Uninstall**.
 - Both methods will restore original game files from backup and clean up all OptiScaler artifacts.
+
+---
+
+## 🧩 Custom FSR 4 DLL (bring your own)
+
+> **This fork adds a "bring-your-own-DLL" feature for FSR 4.x.** The repository contains **no AMD binaries and no links to any**, and the app **never downloads** `amdxcffx64.dll`. You must supply a file you obtained yourself (for example from an AMD driver installation you own). `amdxcffx64.dll` is proprietary AMD software; sourcing it is entirely your responsibility.
+
+AMD ships FSR 4.1 officially for RDNA 3 (driver 26.6.2+), while RDNA 2 support is not expected before ~early 2027. OptiScaler, however, checks the **game folder first** for `amdxcffx64.dll` (since v0.7.7-pre9 / stable v0.7.8) before falling back to the driver store — so a newer INT8-capable DLL placed next to the game executable can enable FSR 4.1.x on older GPUs.
+
+How to use it:
+
+1. Open **Settings → Manage Cache → FSR4 Custom DLL** and click **Import DLL**.
+2. Browse to your local `amdxcffx64.dll`. The app validates that it is a 64-bit DLL, shows its **file version** (e.g. `2.3.x` = FSR 4.1.1 INT8-capable), **SHA-256**, and whether an **Authenticode signature** is present, then stores it in the local component cache. Re-import a newer build at any time — versions are kept side by side.
+3. In a game's **Manage** window, pick the imported version in the **FSR4 Custom DLL** selector and install. The app backs up any existing `amdxcffx64.dll`, copies the imported one next to the game executable, and sets `[FSR] UpscalerIndex=0` / `Fsr4Update=true` in `OptiScaler.ini` so the FSR 4 backend is engaged on non-RDNA4 GPUs.
+4. Uninstalling (or re-installing with the selector on **None**) restores the backup and reverts the ini keys.
+
+If the selected OptiScaler version is older than **v0.7.8** (or nightly **0.7.7-pre9**), the app warns you to update OptiScaler first, since older builds do not load the DLL from the game folder.
+
+---
+
+## 📦 Releases & CI (this fork)
+
+All builds happen on GitHub Actions — nothing is built locally:
+
+- **CI** (`.github/workflows/ci.yml`): every push/PR to `main` restores, builds (win-x64 + linux-x64), and runs tests if a test project exists.
+- **Releases** (`.github/workflows/release.yml`): pushing a tag matching `v*` publishes self-contained single-file builds for `win-x64`, `linux-x64`, `osx-x64`, and `osx-arm64`, zips them as `OptiscalerClient-<version>-<rid>.zip`, and attaches them to an auto-created GitHub Release.
+
+To cut a release:
+
+```bash
+git tag v1.0.6
+git push origin v1.0.6
+```
+
+Then download the zips from the repository's **Releases** page. The Linux/macOS builds run the full UI; game-install paths remain Windows-oriented and are guarded on other platforms.
 
 ---
 
