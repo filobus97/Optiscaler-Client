@@ -134,6 +134,11 @@ namespace OptiscalerClient.Models
         /// Null or "none" means "do not install".
         /// </summary>
         public string? DefaultNukemFGVersion { get; set; } = null;
+        /// <summary>
+        /// The default custom FSR 4.x amdxcffx64.dll version to pre-select in ManageGameWindow.
+        /// Null or "none" means "do not install".
+        /// </summary>
+        public string? DefaultCustomFsr4DllVersion { get; set; } = null;
         public ScanSourcesConfig ScanSources { get; set; } = new();
         public string SteamGridDBApiKey { get; set; } = string.Empty;
         public List<ScanExclusion> ScanExclusions { get; set; } = new();
@@ -253,5 +258,29 @@ namespace OptiscalerClient.Models
     {
         public DateTime LastUpdated { get; set; } = DateTime.MinValue;
         public List<FakenvapiReleaseEntry> Releases { get; set; } = new();
+    }
+
+    /// <summary>
+    /// Metadata for a user-imported custom FSR 4.x amdxcffx64.dll.
+    /// Stored as dll_info.json next to the DLL in its cache folder.
+    /// The DLL itself is never downloaded or bundled by this app — the user
+    /// must supply a file they already possess ("bring your own DLL").
+    /// </summary>
+    public class CustomFsr4DllInfo
+    {
+        /// <summary>Cache folder name / display label (usually the detected FileVersion).</summary>
+        public string VersionLabel { get; set; } = string.Empty;
+        /// <summary>FileVersion read from the PE version resource (e.g. "2.3.1.0"), or null if unreadable.</summary>
+        public string? FileVersion { get; set; }
+        /// <summary>ProductVersion read from the PE version resource, or null if unreadable.</summary>
+        public string? ProductVersion { get; set; }
+        /// <summary>SHA-256 of the imported DLL (uppercase hex).</summary>
+        public string? Sha256 { get; set; }
+        /// <summary>True when the PE has an Authenticode signature directory (presence only, not validity).</summary>
+        public bool HasAuthenticodeSignature { get; set; }
+        /// <summary>Original filename the user selected (before rename-on-import, if any).</summary>
+        public string? OriginalFileName { get; set; }
+        /// <summary>UTC timestamp of the import.</summary>
+        public string? ImportedAtUtc { get; set; }
     }
 }
