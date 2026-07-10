@@ -408,6 +408,34 @@
                                               VerticalContentAlignment="Center"/>
                                 </StackPanel>
 
+                                <!-- Row 2, Col 1 : Custom FSR4 DLL (bring-your-own amdxcffx64.dll) -->
+                                <StackPanel Grid.Row="2" Grid.Column="1">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock Text="FSR4 Custom DLL"
+                                                   Foreground="{StaticResource BrTextSecondary}"
+                                                   FontSize="{StaticResource FontSizeCaption}"
+                                                   VerticalAlignment="Center"/>
+                                        <Border Background="{StaticResource BrBgElevated}"
+                                                BorderBrush="{StaticResource BrBorderSubtle}"
+                                                BorderThickness="1" CornerRadius="8"
+                                                Width="16" Height="16"
+                                                ToolTip.ShowDelay="100" Cursor="Help"
+                                                ToolTip.Tip="Installs a user-imported amdxcffx64.dll (e.g. FSR 4.1.x INT8) next to the game executable so OptiScaler loads it instead of the driver's copy. Import your DLL under Settings → Manage Cache → FSR4 Custom DLL. This tool does not provide the DLL.">
+                                            <TextBlock Text="?" Foreground="{StaticResource BrTextSecondary}"
+                                                       FontSize="10" FontWeight="Bold"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Margin="0,-1,0,0"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <ComboBox Name="CmbCustomFsr4Version"
+                                              Margin="0,4,0,0"
+                                              HorizontalAlignment="Stretch"
+                                              Classes="BtnSelector"
+                                              Padding="8,0,24,0"
+                                              HorizontalContentAlignment="Left"
+                                              VerticalContentAlignment="Center"/>
+                                </StackPanel>
+
                                 <!-- Row 1, Col 1 : OptiPatcher -->
                                 <StackPanel Grid.Row="1" Grid.Column="1">
                                     <StackPanel Orientation="Horizontal" Spacing="4">
