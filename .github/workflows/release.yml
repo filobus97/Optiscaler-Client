@@ -1,0 +1,102 @@
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+permissions:
+  contents: write
+
+jobs:
+  publish:
+    name: Publish (${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # Each RID is published on its native OS:
+          #  - the csproj switches OutputType (WinExe/Exe) on the *build* OS, so
+          #    win-x64 must be built on Windows to get a windowed executable;
+          #  - PublishReadyToRun (enabled in the csproj) does not support
+          #    cross-OS compilation, so building natively avoids R2R failures.
+          - os: windows-latest
+            rid: win-x64
+          - os: ubuntu-latest
+            rid: linux-x64
+          - os: macos-latest
+            rid: osx-arm64
+          # macos-latest runners are arm64; osx-x64 is a same-OS cross-arch
+          # publish, which R2R does not support -> disable R2R for this leg only.
+          - os: macos-latest
+            rid: osx-x64
+            extra-args: -p:PublishReadyToRun=false
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          # Pinned to the major version targeted by OptiscalerClient.csproj (net10.0)
+          dotnet-version: 10.0.x
+
+      - name: Determine version from tag
+        id: version
+        shell: bash
+        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+
+      # Untrimmed self-contained single-file publish. PublishTrimmed stays off
+      # (see csproj): Avalonia + reflection-based code paths are not verified
+      # trim-safe in this project, so reliability wins over size.
+      - name: Publish
+        run: >
+          dotnet publish OptiscalerClient.csproj
+          -c Release
+          -r ${{ matrix.rid }}
+          --self-contained true
+          -o publish
+          ${{ matrix.extra-args }}
+
+      - name: Create zip (Windows)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: Compress-Archive -Path publish/* -DestinationPath "OptiscalerClient-${{ steps.version.outputs.version }}-${{ matrix.rid }}.zip"
+
+      # zip (not Compress-Archive) on Unix so the executable bit survives
+      - name: Create zip (Unix)
+        if: runner.os != 'Windows'
+        shell: bash
+        run: |
+          cd publish
+          zip -r "../OptiscalerClient-${{ steps.version.outputs.version }}-${{ matrix.rid }}.zip" .
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OptiscalerClient-${{ matrix.rid }}
+          path: OptiscalerClient-*.zip
+          if-no-files-found: error
+
+  release:
+    name: Create GitHub Release
+    needs: publish
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download all artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+          merge-multiple: true
+
+      - name: Create release and attach zips
+        uses: softprops/action-gh-release@v2
+        with:
+          files: artifacts/*.zip
+          generate_release_notes: true
+          draft: false
