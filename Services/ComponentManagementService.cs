@@ -2392,6 +2392,146 @@ namespace OptiscalerClient.Services
             }
         }
 
+        // ── Custom FSR 4.x amdxcffx64.dll (bring-your-own DLL) ───────────────────
+        //
+        // This component is strictly local-file based: the app NEVER downloads,
+        // bundles, or links to the DLL. The user browses to an amdxcffx64.dll they
+        // already possess; it is copied into the local cache like other components.
+        //
+        // OptiScaler (v0.7.7-pre9 and newer) checks the game folder first for
+        // amdxcffx64.dll before falling back to the driver store, so installing
+        // means copying the DLL next to the game executable.
+
+        /// <summary>Filename OptiScaler expects for the FSR 4.x driver-side DLL.</summary>
+        public const string CustomFsr4DllName = "amdxcffx64.dll";
+
+        /// <summary>Returns the root cache directory for custom FSR4 DLL versions.</summary>
+        public string GetCustomFsr4CachePath() => Path.Combine(_cacheDir, "CustomFsr4");
+
+        /// <summary>Returns the cache directory for a specific custom FSR4 DLL version.</summary>
+        public string GetCustomFsr4CachePath(string version) => Path.Combine(GetCustomFsr4CachePath(), version);
+
+        /// <summary>Returns the full path of the cached DLL for a specific version.</summary>
+        public string GetCustomFsr4DllPath(string version) => Path.Combine(GetCustomFsr4CachePath(version), CustomFsr4DllName);
+
+        /// <summary>
+        /// Returns a list of locally-imported custom FSR4 DLL version labels
+        /// (subdirectory names under Cache/CustomFsr4/ that contain the DLL).
+        /// </summary>
+        public List<string> GetDownloadedCustomFsr4Versions()
+        {
+            var versions = new List<string>();
+            var root = GetCustomFsr4CachePath();
+            if (!Directory.Exists(root)) return versions;
+
+            foreach (var dir in Directory.GetDirectories(root))
+            {
+                if (File.Exists(Path.Combine(dir, CustomFsr4DllName)))
+                    versions.Add(Path.GetFileName(dir));
+            }
+
+            static Version parseVer(string v)
+            {
+                var clean = new string(v.TakeWhile(c => char.IsDigit(c) || c == '.').ToArray()).TrimEnd('.');
+                return Version.TryParse(clean, out var p) ? p : new Version(0, 0);
+            }
+
+            return versions
+                .OrderByDescending(v => parseVer(v))
+                .ThenByDescending(v => v, StringComparer.OrdinalIgnoreCase)
+                .ToList();
+        }
+
+        /// <summary>Loads the stored metadata for an imported custom FSR4 DLL version, or null.</summary>
+        public CustomFsr4DllInfo? GetCustomFsr4DllInfo(string version)
+        {
+            var infoPath = Path.Combine(GetCustomFsr4CachePath(version), "dll_info.json");
+            if (!File.Exists(infoPath)) return null;
+            try
+            {
+                var json = File.ReadAllText(infoPath);
+                return JsonSerializer.Deserialize(json, OptimizerContext.Default.CustomFsr4DllInfo);
+            }
+            catch (Exception ex)
+            {
+                DebugWindow.Log($"[CustomFsr4] Failed to read dll_info.json for '{version}': {ex.Message}");
+                return null;
+            }
+        }
+
+        /// <summary>
+        /// Imports a user-supplied amdxcffx64.dll into the local component cache.
+        /// Validates the file is a 64-bit PE, reads its version resource, computes
+        /// the SHA-256, and stores everything under Cache/CustomFsr4/{version}/.
+        /// Re-importing the same version overwrites the previous copy.
+        /// Returns the metadata of the imported DLL.
+        /// </summary>
+        public async Task<CustomFsr4DllInfo> ImportCustomFsr4DllAsync(string sourcePath)
+        {
+            if (!File.Exists(sourcePath))
+                throw new FileNotFoundException("Selected file does not exist.", sourcePath);
+
+            return await Task.Run(() =>
+            {
+                PeFileInfo pe;
+                try
+                {
+                    pe = PeFileInspector.Inspect(sourcePath);
+                }
+                catch (Exception ex)
+                {
+                    throw new InvalidDataException($"Could not read the selected file: {ex.Message}", ex);
+                }
+
+                if (!pe.IsValidPe)
+                    throw new InvalidDataException("The selected file is not a valid Windows DLL (missing PE header).");
+                if (!pe.Is64Bit)
+                    throw new InvalidDataException("The selected DLL is not a 64-bit (x64) binary. OptiScaler requires the 64-bit amdxcffx64.dll.");
+
+                string sha256;
+                using (var sha = System.Security.Cryptography.SHA256.Create())
+                using (var stream = File.OpenRead(sourcePath))
+                    sha256 = Convert.ToHexString(sha.ComputeHash(stream));
+
+                // Version label = detected FileVersion, falling back to a hash prefix
+                // so two unknown builds never collide in the cache.
+                var versionLabel = !string.IsNullOrEmpty(pe.FileVersion) && pe.FileVersion != "0.0.0.0"
+                    ? pe.FileVersion
+                    : $"unknown-{sha256[..8].ToLowerInvariant()}";
+                versionLabel = SanitizeVersionName(versionLabel);
+
+                var targetDir = GetCustomFsr4CachePath(versionLabel);
+                Directory.CreateDirectory(targetDir);
+                File.Copy(sourcePath, Path.Combine(targetDir, CustomFsr4DllName), overwrite: true);
+
+                var info = new CustomFsr4DllInfo
+                {
+                    VersionLabel = versionLabel,
+                    FileVersion = pe.FileVersion,
+                    ProductVersion = pe.ProductVersion,
+                    Sha256 = sha256,
+                    HasAuthenticodeSignature = pe.HasAuthenticodeSignature,
+                    OriginalFileName = Path.GetFileName(sourcePath),
+                    ImportedAtUtc = DateTime.UtcNow.ToString("O")
+                };
+
+                var json = JsonSerializer.Serialize(info, OptimizerContext.Default.CustomFsr4DllInfo);
+                File.WriteAllText(Path.Combine(targetDir, "dll_info.json"), json);
+
+                DebugWindow.Log($"[CustomFsr4] Imported '{info.OriginalFileName}' as version '{versionLabel}' " +
+                                $"(FileVersion={pe.FileVersion ?? "?"}, signed={pe.HasAuthenticodeSignature}, sha256={sha256[..16]}…)");
+                return info;
+            });
+        }
+
+        /// <summary>Deletes an imported custom FSR4 DLL version from the cache.</summary>
+        public void DeleteCustomFsr4Cache(string version)
+        {
+            var cachePath = GetCustomFsr4CachePath(version);
+            if (Directory.Exists(cachePath))
+                Directory.Delete(cachePath, true);
+        }
+
         /// <summary>
         /// Imports a NukemFG version from a .zip archive.
         /// Extracts the archive, locates dlssg_to_fsr3_amd_is_better.dll, and caches it

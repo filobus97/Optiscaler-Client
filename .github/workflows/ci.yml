@@ -1,0 +1,56 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  workflow_dispatch:
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build:
+    name: Build (${{ matrix.rid }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # win-x64 is the primary target (the app patches Windows game installs).
+          # Building on a Windows runner keeps the csproj's OS-conditional
+          # OutputType (WinExe vs Exe) correct for the shipped binary.
+          - os: windows-latest
+            rid: win-x64
+          # linux-x64 guards the cross-platform (Avalonia) code paths.
+          - os: ubuntu-latest
+            rid: linux-x64
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v4
+        with:
+          # Pinned to the major version targeted by OptiscalerClient.csproj (net10.0)
+          dotnet-version: 10.0.x
+
+      - name: Restore
+        run: dotnet restore -r ${{ matrix.rid }}
+
+      - name: Build
+        run: dotnet build -c Release -r ${{ matrix.rid }} --no-restore
+
+      # The repo currently has no test project (InternalsVisibleTo names
+      # "Optiscaler-Client.Tests" but it is not committed). Run tests only
+      # when one appears so this step starts working automatically.
+      - name: Test
+        shell: bash
+        run: |
+          if [ -n "$(find . -name '*Tests*.csproj' -not -path '*/bin/*' -not -path '*/obj/*' -print -quit)" ]; then
+            dotnet test -c Release
+          else
+            echo "No test project found - skipping tests."
+          fi

@@ -32,6 +32,7 @@ namespace OptiscalerClient.Models
     [JsonSerializable(typeof(FakenvapiReleaseEntry))]
     [JsonSerializable(typeof(FakenvapiReleasesCache))]
     [JsonSerializable(typeof(List<FakenvapiReleaseEntry>))]
+    [JsonSerializable(typeof(CustomFsr4DllInfo))]
     [JsonSerializable(typeof(OptiScalerProfile))]
     [JsonSerializable(typeof(List<OptiScalerProfile>))]
     [JsonSerializable(typeof(Dictionary<string, Dictionary<string, string>>))]

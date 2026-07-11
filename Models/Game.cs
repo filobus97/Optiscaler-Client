@@ -56,6 +56,11 @@ public class Game
     public bool IsOptiscalerInstalled { get; set; }
     public string? OptiscalerVersion { get; set; }
     public string? Fsr4ExtraVersion { get; set; }
+    /// <summary>
+    /// Version label of the user-imported custom amdxcffx64.dll (FSR 4.x INT8)
+    /// installed into this game, or null when not installed.
+    /// </summary>
+    public string? CustomFsr4DllVersion { get; set; }
 
     public bool HasUpscaler => DlssVersion != null || DlssFrameGenVersion != null || FsrVersion != null || XessVersion != null || IsOptiscalerInstalled;
 

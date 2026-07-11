@@ -47,6 +47,8 @@ namespace OptiscalerClient.Services
             "dlssg_to_fsr3_amd_is_better.dll",
             // FSR 4 INT8 mod
             "amd_fidelityfx_upscaler_dx12.dll",
+            // Custom FSR 4.x driver DLL (user-supplied; installed next to the game exe)
+            "amdxcffx64.dll",
             // OptiPatcher
             @"plugins\OptiPatcher.asi"
         };
@@ -172,6 +174,8 @@ namespace OptiscalerClient.Services
                 if (Directory.Exists(fakeDir)) cacheDirsForResidue.Add(fakeDir);
                 var nukemDir = componentService.GetNukemFGCachePath();
                 if (Directory.Exists(nukemDir)) cacheDirsForResidue.Add(nukemDir);
+                var customFsr4Dir = componentService.GetCustomFsr4CachePath();
+                if (Directory.Exists(customFsr4Dir)) cacheDirsForResidue.Add(customFsr4Dir);
 
                 var residues = _backupStore.FindResiduesInGameDir(gameDir, KnownOptiscalerArtifacts, cacheDirsForResidue);
                 foreach (var residue in residues)
@@ -818,6 +822,7 @@ namespace OptiscalerClient.Services
             game.IsOptiscalerInstalled = false;
             game.OptiscalerVersion = null;
             game.Fsr4ExtraVersion = null;
+            game.CustomFsr4DllVersion = null;
 
             // Re-analyze to refresh DLSS/FSR/XeSS detection after files were removed/restored
             var analyzer = new GameAnalyzerService();
@@ -894,7 +899,8 @@ namespace OptiscalerClient.Services
                 "OptiScaler.ini",
                 "nvapi64.dll",
                 "dlssg_to_fsr3_amd_is_better.dll",
-                "amd_fidelityfx_upscaler_dx12.dll"
+                "amd_fidelityfx_upscaler_dx12.dll",
+                "amdxcffx64.dll"
             };
 
             var snapshots = new List<KeyFileSnapshot>();
@@ -1191,6 +1197,7 @@ namespace OptiscalerClient.Services
             game.IsOptiscalerInstalled = false;
             game.OptiscalerVersion = null;
             game.Fsr4ExtraVersion = null;
+            game.CustomFsr4DllVersion = null;
 
             var analyzer = new GameAnalyzerService();
             GameAnalyzerService.InvalidateCacheForPath(game.InstallPath);
@@ -1201,6 +1208,7 @@ namespace OptiscalerClient.Services
             game.IsOptiscalerInstalled = false;
             game.OptiscalerVersion = null;
             game.Fsr4ExtraVersion = null;
+            game.CustomFsr4DllVersion = null;
 
             GameAnalyzerService.FlushCacheToDisk();
 
@@ -1689,6 +1697,268 @@ namespace OptiscalerClient.Services
 
             // Return original path if no special structure detected
             return baseDir;
+        }
+
+        // ── Custom FSR 4.x amdxcffx64.dll (bring-your-own DLL) ────────────────────
+
+        /// <summary>
+        /// First OptiScaler version that loads amdxcffx64.dll from the game folder
+        /// (before checking the driver store). Introduced in v0.7.7-pre9; the first
+        /// stable release containing it is v0.7.8.
+        /// </summary>
+        public static readonly Version MinOptiScalerVersionForCustomFsr4 = new(0, 7, 8);
+
+        /// <summary>
+        /// Returns true when the given OptiScaler version string is known to support
+        /// loading a custom amdxcffx64.dll from the game folder. Unparseable versions
+        /// (e.g. user-imported custom builds) return true — we can't judge those.
+        /// </summary>
+        public static bool SupportsCustomFsr4Dll(string? optiscalerVersion)
+        {
+            if (string.IsNullOrWhiteSpace(optiscalerVersion))
+                return true;
+
+            var clean = new string(optiscalerVersion.TrimStart('v', 'V')
+                .TakeWhile(c => char.IsDigit(c) || c == '.').ToArray()).TrimEnd('.');
+            if (!Version.TryParse(clean, out var parsed))
+                return true; // custom/unknown builds: don't block
+
+            if (parsed >= MinOptiScalerVersionForCustomFsr4)
+                return true;
+
+            // 0.7.7 pre-releases from pre9 onward also support it
+            if (parsed == new Version(0, 7, 7))
+            {
+                var match = System.Text.RegularExpressions.Regex.Match(
+                    optiscalerVersion, @"pre[\s\-]?(\d+)", System.Text.RegularExpressions.RegexOptions.IgnoreCase);
+                if (match.Success && int.TryParse(match.Groups[1].Value, out var pre))
+                    return pre >= 9;
+            }
+
+            return false;
+        }
+
+        /// <summary>
+        /// Installs a user-imported custom amdxcffx64.dll (FSR 4.x) into the game.
+        /// OptiScaler (v0.7.7-pre9+) checks the game folder for this DLL before the
+        /// driver store, so the DLL is copied next to the game executable. Any existing
+        /// amdxcffx64.dll is backed up through the external backup store, and the
+        /// [FSR] ini keys needed to engage FSR4 on non-RDNA4 GPUs are set.
+        /// Must be called after OptiScaler itself is installed (a committed manifest
+        /// is required so uninstall can restore/delete the DLL).
+        /// </summary>
+        public void InstallCustomFsr4Dll(Game game, string cachedDllPath, string versionLabel, string? overrideGameDir = null)
+        {
+            const string dllName = "amdxcffx64.dll";
+
+            if (!File.Exists(cachedDllPath))
+                throw new FileNotFoundException("The imported amdxcffx64.dll was not found in the local cache.", cachedDllPath);
+
+            var storeKey = game.InstallPath;
+            var manifest = _backupStore.LoadManifest(storeKey);
+            if (manifest == null || !string.Equals(manifest.OperationStatus, "committed", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException("OptiScaler must be installed for this game before adding the custom FSR 4 DLL.");
+
+            var gameDir = overrideGameDir
+                ?? (!string.IsNullOrEmpty(manifest.InstalledGameDirectory) && Directory.Exists(manifest.InstalledGameDirectory)
+                    ? manifest.InstalledGameDirectory
+                    : DetermineInstallDirectory(game));
+
+            if (string.IsNullOrEmpty(gameDir) || !Directory.Exists(gameDir))
+                throw new Exception("Could not determine the game directory for the custom FSR 4 DLL.");
+
+            DebugWindow.Log($"[CustomFsr4] Installing v{versionLabel} into {gameDir}");
+
+            // Mirror the backup rules of the main install: never re-backup a file that is
+            // already protected by an original backup, and never treat a file we installed
+            // ourselves as a game original. game.CustomFsr4DllVersion covers OptiScaler
+            // updates, where the manifest is rebuilt and loses this component's records
+            // while the DLL we placed earlier is still on disk.
+            var priorBackedUp = manifest.FilesOverwritten.Any(r => r.RelativePath.Equals(dllName, StringComparison.OrdinalIgnoreCase))
+                             || manifest.BackedUpFiles.Contains(dllName, StringComparer.OrdinalIgnoreCase);
+            var priorCreated = manifest.FilesCreated.Any(r => r.RelativePath.Equals(dllName, StringComparison.OrdinalIgnoreCase))
+                            || !string.IsNullOrEmpty(game.CustomFsr4DllVersion);
+            var backupInStore = File.Exists(Path.Combine(_backupStore.GetFilesDir(storeKey), dllName));
+
+            var destPath = Path.Combine(gameDir, dllName);
+            var existedBefore = File.Exists(destPath);
+            string? preHash = null;
+
+            if (existedBefore && !priorBackedUp && !priorCreated)
+            {
+                preHash = ComputeSha256(destPath);
+                _backupStore.BackupFile(storeKey, gameDir, dllName);
+                manifest.BackedUpFiles.Add(dllName);
+                DebugWindow.Log($"[CustomFsr4] Backed up existing {dllName}");
+            }
+
+            // An original backup surviving in the store (from a previous install cycle)
+            // must keep its "overwritten" record so uninstall restores it.
+            var treatAsOriginal = (existedBefore && !priorCreated) || priorBackedUp || (priorCreated && backupInStore);
+            if (treatAsOriginal && !manifest.BackedUpFiles.Contains(dllName, StringComparer.OrdinalIgnoreCase) && backupInStore)
+                manifest.BackedUpFiles.Add(dllName);
+
+            File.Copy(cachedDllPath, destPath, overwrite: true);
+            if (!manifest.InstalledFiles.Contains(dllName, StringComparer.OrdinalIgnoreCase))
+                manifest.InstalledFiles.Add(dllName);
+            TrackManifestFileMutation(
+                manifest,
+                relativePath: dllName,
+                existedBefore: treatAsOriginal,
+                preInstallHash: preHash,
+                postInstallHash: ComputeSha256(destPath));
+
+            // Engage FSR4 on non-RDNA4 GPUs:
+            //  - UpscalerIndex=0 selects the FSR 4.x backend on current OptiScaler builds
+            //  - Fsr4Update=true is the equivalent key on older (0.7.x) builds; unknown
+            //    keys are ignored by OptiScaler's ini parser, so setting both is safe.
+            ModifyOptiScalerIniKey(gameDir, "FSR", "UpscalerIndex", "0");
+            ModifyOptiScalerIniKey(gameDir, "FSR", "Fsr4Update", "true");
+
+            manifest.IncludesCustomFsr4Dll = true;
+            manifest.CustomFsr4DllVersion = versionLabel;
+            if (!manifest.ExpectedFinalMarkers.Contains(dllName, StringComparer.OrdinalIgnoreCase))
+                manifest.ExpectedFinalMarkers.Add(dllName);
+            _backupStore.SaveManifest(storeKey, manifest);
+
+            game.CustomFsr4DllVersion = versionLabel;
+            DebugWindow.Log($"[CustomFsr4] Installed v{versionLabel} and updated OptiScaler.ini ([FSR] UpscalerIndex=0, Fsr4Update=true)");
+        }
+
+        /// <summary>
+        /// Removes only the custom amdxcffx64.dll from a game: restores the backed-up
+        /// original if one exists (or deletes the file if OptiScaler created it), reverts
+        /// the [FSR] ini keys to auto, and updates the manifest. The rest of the
+        /// OptiScaler installation is left untouched.
+        /// </summary>
+        public void UninstallCustomFsr4Dll(Game game)
+        {
+            const string dllName = "amdxcffx64.dll";
+
+            var storeKey = game.InstallPath;
+            var manifest = _backupStore.LoadManifest(storeKey);
+
+            var gameDir = !string.IsNullOrEmpty(manifest?.InstalledGameDirectory) && Directory.Exists(manifest!.InstalledGameDirectory)
+                ? manifest.InstalledGameDirectory
+                : DetermineInstallDirectory(game);
+
+            if (string.IsNullOrEmpty(gameDir) || !Directory.Exists(gameDir))
+                throw new Exception("Could not determine the game directory.");
+
+            var destPath = Path.Combine(gameDir, dllName);
+
+            var overwrittenRecord = manifest?.FilesOverwritten.FirstOrDefault(
+                r => r.RelativePath.Equals(dllName, StringComparison.OrdinalIgnoreCase));
+            // The manifest can lose this component's records across OptiScaler updates,
+            // but the original backup file survives in the store — prefer restoring it.
+            var backupInStore = File.Exists(Path.Combine(_backupStore.GetFilesDir(storeKey), dllName));
+
+            if (overwrittenRecord != null || backupInStore)
+            {
+                // The game had its own amdxcffx64.dll — restore it.
+                if (!_backupStore.RestoreFile(storeKey, gameDir, dllName, overwrittenRecord?.BackupRelativePath))
+                    DebugWindow.Log($"[CustomFsr4] Backup for {dllName} not found; leaving current file in place.");
+                else
+                    DebugWindow.Log($"[CustomFsr4] Restored original {dllName} from backup.");
+            }
+            else if (File.Exists(destPath))
+            {
+                File.Delete(destPath);
+                DebugWindow.Log($"[CustomFsr4] Deleted {dllName} (no pre-existing file to restore).");
+            }
+
+            // Revert the ini keys to their defaults so FSR4 is no longer forced.
+            ModifyOptiScalerIniKey(gameDir, "FSR", "UpscalerIndex", "auto");
+            ModifyOptiScalerIniKey(gameDir, "FSR", "Fsr4Update", "auto");
+
+            if (manifest != null)
+            {
+                manifest.IncludesCustomFsr4Dll = false;
+                manifest.CustomFsr4DllVersion = null;
+                manifest.InstalledFiles.RemoveAll(f => f.Equals(dllName, StringComparison.OrdinalIgnoreCase));
+                manifest.FilesCreated.RemoveAll(r => r.RelativePath.Equals(dllName, StringComparison.OrdinalIgnoreCase));
+                manifest.FilesOverwritten.RemoveAll(r => r.RelativePath.Equals(dllName, StringComparison.OrdinalIgnoreCase));
+                manifest.ExpectedFinalMarkers.RemoveAll(f => f.Equals(dllName, StringComparison.OrdinalIgnoreCase));
+                _backupStore.SaveManifest(storeKey, manifest);
+            }
+
+            game.CustomFsr4DllVersion = null;
+        }
+
+        /// <summary>
+        /// Sets a key inside an arbitrary [section] of OptiScaler.ini, creating the
+        /// file, the section, or the key as needed. Unlike ModifyOptiScalerIni (which
+        /// only handles [General]), this is section-aware.
+        /// </summary>
+        internal static void ModifyOptiScalerIniKey(string gameDir, string section, string key, string value)
+        {
+            var iniPath = Path.Combine(gameDir, "OptiScaler.ini");
+            var sectionHeader = $"[{section}]";
+
+            if (!File.Exists(iniPath))
+            {
+                File.WriteAllText(iniPath, $"{sectionHeader}\n{key}={value}\n");
+                return;
+            }
+
+            try
+            {
+                var lines = File.ReadAllLines(iniPath).ToList();
+                int sectionStart = -1;
+                int sectionEnd = lines.Count; // exclusive
+
+                for (int i = 0; i < lines.Count; i++)
+                {
+                    var line = lines[i].Trim();
+                    if (!line.StartsWith("[")) continue;
+
+                    if (sectionStart < 0)
+                    {
+                        if (line.Equals(sectionHeader, StringComparison.OrdinalIgnoreCase))
+                            sectionStart = i;
+                    }
+                    else
+                    {
+                        sectionEnd = i;
+                        break;
+                    }
+                }
+
+                if (sectionStart < 0)
+                {
+                    // Section missing — append it at the end.
+                    if (lines.Count > 0 && lines[^1].Trim().Length > 0)
+                        lines.Add(string.Empty);
+                    lines.Add(sectionHeader);
+                    lines.Add($"{key}={value}");
+                }
+                else
+                {
+                    bool keyFound = false;
+                    for (int i = sectionStart + 1; i < sectionEnd; i++)
+                    {
+                        var trimmed = lines[i].TrimStart();
+                        if (trimmed.StartsWith(";") || trimmed.StartsWith("#")) continue;
+                        var eq = trimmed.IndexOf('=');
+                        if (eq <= 0) continue;
+                        if (trimmed[..eq].Trim().Equals(key, StringComparison.OrdinalIgnoreCase))
+                        {
+                            lines[i] = $"{key}={value}";
+                            keyFound = true;
+                            break;
+                        }
+                    }
+
+                    if (!keyFound)
+                        lines.Insert(sectionStart + 1, $"{key}={value}");
+                }
+
+                File.WriteAllLines(iniPath, lines);
+            }
+            catch (Exception ex)
+            {
+                DebugWindow.Log($"[Ini] Failed to set [{section}] {key}={value}: {ex.Message}");
+            }
         }
 
         /// <summary>

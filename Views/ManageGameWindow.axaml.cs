@@ -330,6 +330,73 @@ namespace OptiscalerClient.Views
 
             // ── Populate Fakenvapi selector ───────────────────────────────────
             PopulateFakenvapiComboBox(componentService);
+
+            // ── Populate custom FSR4 DLL selector ─────────────────────────────
+            PopulateCustomFsr4ComboBox(componentService);
+        }
+
+        /// <summary>
+        /// Populates CmbCustomFsr4Version with the locally imported amdxcffx64.dll
+        /// versions + a "None" option. This component is local-only (bring your own
+        /// DLL) — versions are imported via Settings → Manage Cache → FSR4 Custom DLL.
+        /// Defaults to the configured DefaultCustomFsr4DllVersion, otherwise None.
+        /// </summary>
+        private void PopulateCustomFsr4ComboBox(ComponentManagementService componentService)
+        {
+            var cmb = this.FindControl<ComboBox>("CmbCustomFsr4Version");
+            if (cmb == null) return;
+
+            cmb.Items.Clear();
+
+            var versions = componentService.GetDownloadedCustomFsr4Versions();
+            if (versions.Count == 0)
+            {
+                cmb.Items.Add(new ComboBoxItem { Content = "None imported", Tag = "none" });
+                cmb.SelectedIndex = 0;
+                cmb.IsEnabled = false;
+                return;
+            }
+            cmb.IsEnabled = true;
+
+            // Option 0: None (opt-in component)
+            cmb.Items.Add(new ComboBoxItem { Content = "None", Tag = "none" });
+
+            foreach (var ver in versions)
+            {
+                var info = componentService.GetCustomFsr4DllInfo(ver);
+                var stack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+                stack.Children.Add(new TextBlock { Text = ver, VerticalAlignment = VerticalAlignment.Center });
+                if (info is { HasAuthenticodeSignature: true })
+                {
+                    stack.Children.Add(new Border
+                    {
+                        CornerRadius = new CornerRadius(4),
+                        Background = new SolidColorBrush(Color.Parse("#2E7D32")),
+                        Padding = new Thickness(5, 1),
+                        Child = new TextBlock { Text = "SIGNED", FontSize = 10, Foreground = Brushes.White, FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center }
+                    });
+                }
+                cmb.Items.Add(new ComboBoxItem { Content = stack, Tag = ver });
+            }
+
+            // Default selection: configured default if it still exists, otherwise None
+            int targetIndex = 0;
+            var globalDefault = componentService.Config.DefaultCustomFsr4DllVersion;
+            if (!string.IsNullOrEmpty(globalDefault) &&
+                !globalDefault.Equals("none", StringComparison.OrdinalIgnoreCase))
+            {
+                for (int i = 1; i < cmb.Items.Count; i++)
+                {
+                    var itemVer = (cmb.Items[i] as ComboBoxItem)?.Tag?.ToString();
+                    if (string.Equals(itemVer, globalDefault, StringComparison.OrdinalIgnoreCase))
+                    {
+                        targetIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            cmb.SelectedIndex = targetIndex;
         }
 
         // ── OptiScaler tab selector ──────────────────────────────────────────
@@ -1142,6 +1209,13 @@ namespace OptiscalerClient.Views
             bool installOptiPatcher = !string.IsNullOrEmpty(selectedOptiPatcherVersion) &&
                                       !selectedOptiPatcherVersion.Equals("none", StringComparison.OrdinalIgnoreCase);
 
+            // Read selected custom FSR4 DLL (amdxcffx64.dll) version before any async work
+            var cmbCustomFsr4Version = this.FindControl<ComboBox>("CmbCustomFsr4Version");
+            var selectedCustomFsr4Item = cmbCustomFsr4Version?.SelectedItem as ComboBoxItem;
+            var selectedCustomFsr4Version = selectedCustomFsr4Item?.Tag?.ToString();
+            bool installCustomFsr4 = !string.IsNullOrEmpty(selectedCustomFsr4Version) &&
+                                     !selectedCustomFsr4Version.Equals("none", StringComparison.OrdinalIgnoreCase);
+
             try
             {
                 var componentService = new ComponentManagementService();
@@ -1161,6 +1235,20 @@ namespace OptiscalerClient.Views
                     var inProgressFmt = GetResourceString("TxtDownloadInProgressFormat", "A download is already in progress for v{0}.");
                     await ShowToastAsync(string.Format(inProgressFmt, optiscalerVersion));
                     return;
+                }
+
+                // Warn when the selected OptiScaler version predates game-folder
+                // amdxcffx64.dll loading (added in v0.7.7-pre9, first stable v0.7.8).
+                if (installCustomFsr4 && !GameInstallationService.SupportsCustomFsr4Dll(optiscalerVersion))
+                {
+                    var proceed = await new ConfirmDialog(this, "OptiScaler version too old",
+                        $"OptiScaler v{optiscalerVersion} does not load a custom amdxcffx64.dll from the game folder.\n" +
+                        $"The custom FSR 4 DLL feature needs OptiScaler v{GameInstallationService.MinOptiScalerVersionForCustomFsr4} or newer " +
+                        "(or nightly 0.7.7-pre9+). Please update OptiScaler first.\n\n" +
+                        "Continue anyway? The DLL will be copied but OptiScaler will likely ignore it.")
+                        .ShowDialog<bool>(this);
+                    if (!proceed)
+                        return;
                 }
 
                 string? overrideGameDir = null;
@@ -1563,6 +1651,59 @@ namespace OptiscalerClient.Views
                             if (prgDownload != null) prgDownload.IsIndeterminate = false;
                             if (bdProgress != null) bdProgress.IsVisible = false;
                         });
+                    }
+                }
+
+                // ── Custom FSR4 DLL (user-imported amdxcffx64.dll) install ────────
+                if (installCustomFsr4 && !string.IsNullOrEmpty(selectedCustomFsr4Version))
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (bdProgress != null) bdProgress.IsVisible = true;
+                        if (txtProgressState != null) txtProgressState.Text = "Installing custom FSR4 DLL...";
+                        if (prgDownload != null) prgDownload.IsIndeterminate = true;
+                    });
+
+                    try
+                    {
+                        var cachedDllPath = componentService.GetCustomFsr4DllPath(selectedCustomFsr4Version);
+                        await Task.Run(() =>
+                        {
+                            var installSvc = new GameInstallationService();
+                            installSvc.InstallCustomFsr4Dll(_game, cachedDllPath, selectedCustomFsr4Version, overrideGameDir);
+                        });
+                        installedComponents += " + FSR4 Custom DLL";
+                    }
+                    catch (Exception ex)
+                    {
+                        Dispatcher.UIThread.Post(() => { if (bdProgress != null) bdProgress.IsVisible = false; });
+                        await new ConfirmDialog(this, "Warning",
+                            $"Custom FSR4 DLL installation failed (OptiScaler was still installed):\n{ex.Message}").ShowDialog<object>(this);
+                    }
+                    finally
+                    {
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            if (prgDownload != null) prgDownload.IsIndeterminate = false;
+                            if (bdProgress != null) bdProgress.IsVisible = false;
+                        });
+                    }
+                }
+                else if (!installCustomFsr4 && !string.IsNullOrEmpty(_game.CustomFsr4DllVersion))
+                {
+                    // Previously installed but deselected now — remove it cleanly
+                    // (restores any original amdxcffx64.dll and reverts the ini keys).
+                    try
+                    {
+                        await Task.Run(() =>
+                        {
+                            var installSvc = new GameInstallationService();
+                            installSvc.UninstallCustomFsr4Dll(_game);
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugWindow.Log($"[CustomFsr4] Removal on deselect failed: {ex.Message}");
                     }
                 }
 
@@ -2000,6 +2141,18 @@ namespace OptiscalerClient.Views
                 if (fsr4DllExists && !string.IsNullOrEmpty(_game.Fsr4ExtraVersion))
                 {
                     components.Add($"FSR 4 INT8 mod: {_game.Fsr4ExtraVersion}");
+                }
+
+                if (!string.IsNullOrEmpty(_game.CustomFsr4DllVersion))
+                {
+                    // The DLL may live in a subdirectory (UE games); trust the manifest-backed
+                    // game state but confirm the file when it sits at the install root.
+                    var installSvc = new GameInstallationService();
+                    var dir = installSvc.DetermineInstallDirectory(_game) ?? _game.InstallPath;
+                    bool customDllExists = File.Exists(System.IO.Path.Combine(dir, "amdxcffx64.dll"))
+                                        || File.Exists(System.IO.Path.Combine(_game.InstallPath, "amdxcffx64.dll"));
+                    if (customDllExists)
+                        components.Add($"FSR 4 custom DLL: {_game.CustomFsr4DllVersion}");
                 }
             }
 

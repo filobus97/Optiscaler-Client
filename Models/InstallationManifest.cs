@@ -61,6 +61,12 @@ namespace OptiscalerClient.Models
         public bool IncludesNukemFG { get; set; }
         public bool IncludesExtras { get; set; }
         public bool IncludesOptiPatcher { get; set; }
+        public bool IncludesCustomFsr4Dll { get; set; }
+
+        /// <summary>
+        /// Version label of the user-imported custom amdxcffx64.dll installed with this game, if any.
+        /// </summary>
+        public string? CustomFsr4DllVersion { get; set; }
 
         /// <summary>
         /// Name of the OptiScaler profile that was applied during installation
