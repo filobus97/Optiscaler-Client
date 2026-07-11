@@ -1,15 +1,15 @@
-﻿# ✦ OptiScaler Client
+﻿# ✦ OptiScaler Client Next
 
-[![GitHub Release](https://img.shields.io/github/v/release/Agustinm28/Optiscaler-Client?style=flat-square&color=8A2BE2)](https://github.com/Agustinm28/Optiscaler-Client/releases/tag/OptiscalerClient-1.0.5)
+[![GitHub Release](https://img.shields.io/github/v/release/filobus97/Optiscaler-Client?style=flat-square&color=8A2BE2)](https://github.com/filobus97/Optiscaler-Client/releases)
 [![License: GPL-3.0-or-later](https://img.shields.io/badge/License-GPL--3.0--or--later-yellow.svg?style=flat-square)](LICENSE)
 [![Platform: Windows](https://img.shields.io/badge/Platform-Windows-0078D4?style=flat-square&logo=windows)](https://www.microsoft.com/windows)
 [![Platform: Linux](https://img.shields.io/badge/Platform-Linux-E95420?style=flat-square&logo=linux)](https://www.linux.org)
 
 > **⚠️ Disclaimer:** This is **not** an official OptiScaler project. I am not affiliated with the OptiScaler team. This is a personal project developed without any commercial purpose. Anyone is free to try and use this software at their own risk.
 
-> **🔱 Fork note:** This is a fork of [Agustinm28/Optiscaler-Client](https://github.com/Agustinm28/Optiscaler-Client) (GPL-3.0-or-later). It adds a **custom FSR 4.x DLL** feature: the app can install a **user-supplied** `amdxcffx64.dll` into games. This repository contains **no AMD binaries and no download links to them** — you must source the DLL yourself. It also adds GitHub Actions CI and cross-platform release builds. All upstream credit belongs to the original author and the OptiScaler team.
+> **🔱 Fork note:** **OptiScaler Client Next** is a fork of [Agustinm28/Optiscaler-Client](https://github.com/Agustinm28/Optiscaler-Client) (GPL-3.0-or-later) — the "Next" in the name marks it as unofficial and distinct from the original. It adds two **bring-your-own-DLL** features: the app can install a **user-supplied** `amdxcffx64.dll` (FSR 4.x driver/model DLL) and a **user-supplied** `amd_fidelityfx_upscaler_dx12.dll` (FSR SDK) into games. This repository contains **no AMD binaries and no download links to them** — you must source the DLLs yourself. It also adds GitHub Actions CI and cross-platform release builds. All upstream credit belongs to the original author and the OptiScaler team.
 
-**OptiScaler Client** is a modern, high-performance desktop utility designed to simplify the installation, management, and update of the **OptiScaler** mod across your entire game library. Built with **C#** and **Avalonia UI**.
+**OptiScaler Client Next** is a modern, high-performance desktop utility designed to simplify the installation, management, and update of the **OptiScaler** mod across your entire game library. Built with **C#** and **Avalonia UI**.
 
 ---
 
@@ -55,7 +55,8 @@
 - **Fakenvapi** — Compatibility layer for **AMD/Intel GPUs**, installed alongside OptiScaler when needed.
 - **Nukem's DLSSG-to-FSR3** — Frame generation bridge that converts DLSS Frame Gen to FSR3.
 - **FSR 4 INT8 Extras** — INT8 shader injection for non-RDNA 4 GPUs.
-- **FSR 4.x Custom DLL (bring your own)** — *fork addition:* installs a **user-supplied** `amdxcffx64.dll` (e.g. a newer FSR 4.1.x INT8 build) next to the game executable, where OptiScaler loads it before the driver store. See [Custom FSR 4 DLL](#-custom-fsr-4-dll-bring-your-own) below.
+- **FSR 4.x Custom DLL (bring your own)** — *fork addition:* installs a **user-supplied** `amdxcffx64.dll` (e.g. a newer FSR 4.1.x INT8 build) next to the game executable, where OptiScaler loads it before the driver store. See [Custom FSR 4 DLLs](#-custom-fsr-4-dlls-bring-your-own) below.
+- **FSR SDK Custom DLL (bring your own)** — *fork addition:* installs a **user-supplied** `amd_fidelityfx_upscaler_dx12.dll`, replacing the FSR SDK bundled with the installed OptiScaler release — run a newer FSR 4 SDK without waiting for an OptiScaler update. Mutually exclusive per game with the FSR 4 INT8 Extras (same target file).
 - **OptiPatcher** — ASI plugin loader, automatically configured with `LoadAsiPlugins=true` in OptiScaler.ini.
 
 ### Profiles
@@ -137,20 +138,30 @@ Full interface translation in **14 languages**:
 
 ---
 
-## 🧩 Custom FSR 4 DLL (bring your own)
+## 🧩 Custom FSR 4 DLLs (bring your own)
 
-> **This fork adds a "bring-your-own-DLL" feature for FSR 4.x.** The repository contains **no AMD binaries and no links to any**, and the app **never downloads** `amdxcffx64.dll`. You must supply a file you obtained yourself (for example from an AMD driver installation you own). `amdxcffx64.dll` is proprietary AMD software; sourcing it is entirely your responsibility.
+> **This fork adds "bring-your-own-DLL" features for FSR 4.x.** The repository contains **no AMD binaries and no links to any**, and the app **never downloads** these DLLs. You must supply files you obtained yourself (for example from an AMD driver installation you own). They are AMD software; sourcing them is entirely your responsibility.
+
+FSR 4 is split across two DLLs, and this fork lets you swap either one per game:
+
+| Component | File | What it is |
+|---|---|---|
+| **FSR4 Custom DLL** | `amdxcffx64.dll` | The driver-side DLL containing the FSR 4 ML models. File version `2.3.x` = FSR 4.1.x INT8-capable (runs on RDNA 2/3). |
+| **FSR4 Custom SDK** | `amd_fidelityfx_upscaler_dx12.dll` | The FSR SDK upscaler DLL that games/OptiScaler talk to. Each OptiScaler release bundles one; this component overrides it. |
 
 AMD ships FSR 4.1 officially for RDNA 3 (driver 26.6.2+), while RDNA 2 support is not expected before ~early 2027. OptiScaler, however, checks the **game folder first** for `amdxcffx64.dll` (since v0.7.7-pre9 / stable v0.7.8) before falling back to the driver store — so a newer INT8-capable DLL placed next to the game executable can enable FSR 4.1.x on older GPUs.
 
-How to use it:
+How to use them:
 
-1. Open **Settings → Manage Cache → FSR4 Custom DLL** and click **Import DLL**.
-2. Browse to your local `amdxcffx64.dll`. The app validates that it is a 64-bit DLL, shows its **file version** (e.g. `2.3.x` = FSR 4.1.1 INT8-capable), **SHA-256**, and whether an **Authenticode signature** is present, then stores it in the local component cache. Re-import a newer build at any time — versions are kept side by side.
-3. In a game's **Manage** window, pick the imported version in the **FSR4 Custom DLL** selector and install. The app backs up any existing `amdxcffx64.dll`, copies the imported one next to the game executable, and sets `[FSR] UpscalerIndex=0` / `Fsr4Update=true` in `OptiScaler.ini` so the FSR 4 backend is engaged on non-RDNA4 GPUs.
+1. Open **Settings → Manage Cache → FSR4 Custom DLL** (or **FSR4 Custom SDK**) and click **Import DLL**.
+2. Browse to your local DLL. The app validates that it is a 64-bit DLL, shows its **file version**, **SHA-256**, and whether an **Authenticode signature** is present, then stores it in the local component cache. Re-import newer builds at any time — versions are kept side by side.
+3. In a game's **Manage** window, pick the imported version in the matching selector and install. The app backs up any existing file, copies the imported one next to the game executable, and sets `[FSR] UpscalerIndex=0` / `Fsr4Update=true` in `OptiScaler.ini` so the FSR 4 backend is engaged on non-RDNA4 GPUs.
 4. Uninstalling (or re-installing with the selector on **None**) restores the backup and reverts the ini keys.
 
-If the selected OptiScaler version is older than **v0.7.8** (or nightly **0.7.7-pre9**), the app warns you to update OptiScaler first, since older builds do not load the DLL from the game folder.
+Notes:
+
+- The **FSR4 Custom SDK** selector and the classic **FSR4 INT8** (Extras) selector install the *same file* — the game manager keeps them mutually exclusive and deselects one when you pick the other. With a 4.1.x `amdxcffx64.dll` the old INT8 Extras are normally unnecessary.
+- If the selected OptiScaler version is older than **v0.7.8** (or nightly **0.7.7-pre9**), the app warns you to update OptiScaler first, since older builds do not load `amdxcffx64.dll` from the game folder.
 
 ---
 
