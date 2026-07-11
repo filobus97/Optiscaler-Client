@@ -3036,7 +3036,7 @@ namespace OptiscalerClient.Views
 
             var appLabel = new TextBlock
             {
-                Text = "Optiscaler Client",
+                Text = "Optiscaler Client Next",
                 FontWeight = FontWeight.SemiBold,
                 FontSize = 15,
                 VerticalAlignment = Avalonia.Layout.VerticalAlignment.Center,

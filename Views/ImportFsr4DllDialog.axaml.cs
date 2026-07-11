@@ -28,29 +28,47 @@ using OptiscalerClient.Services;
 namespace OptiscalerClient.Views
 {
     /// <summary>
-    /// "Bring your own DLL" import dialog for the custom FSR 4.x amdxcffx64.dll.
-    /// The app never downloads or links to this DLL — the user must browse to a
-    /// local file they already possess. The file is validated as a 64-bit PE, its
-    /// version resource and SHA-256 are shown, and Authenticode signature presence
-    /// is reported as info (never blocking).
+    /// Which user-supplied FSR DLL this dialog imports.
+    /// </summary>
+    public enum CustomDllKind
+    {
+        /// <summary>amdxcffx64.dll — the driver-side DLL containing the FSR 4 ML models.</summary>
+        Fsr4ModelDll,
+        /// <summary>amd_fidelityfx_upscaler_dx12.dll — the FSR SDK upscaler DLL.</summary>
+        FsrSdkDll,
+    }
+
+    /// <summary>
+    /// "Bring your own DLL" import dialog for the custom FSR DLLs (amdxcffx64.dll
+    /// or amd_fidelityfx_upscaler_dx12.dll). The app never downloads or links to
+    /// these DLLs — the user must browse to a local file they already possess. The
+    /// file is validated as a 64-bit PE, its version resource and SHA-256 are shown,
+    /// and Authenticode signature presence is reported as info (never blocking).
     /// </summary>
     public partial class ImportFsr4DllDialog : Window
     {
         private readonly ComponentManagementService _componentService;
+        private readonly CustomDllKind _kind;
         private string? _selectedPath;
         private PeFileInfo? _selectedPeInfo;
         private bool _isAnimatingClose;
+
+        private string ExpectedDllName => _kind == CustomDllKind.FsrSdkDll
+            ? ComponentManagementService.CustomFsrSdkDllName
+            : ComponentManagementService.CustomFsr4DllName;
 
         /// <summary>Metadata of the imported DLL, set when the import succeeded.</summary>
         public CustomFsr4DllInfo? ImportedInfo { get; private set; }
 
         public ImportFsr4DllDialog() : this(new ComponentManagementService()) { }
 
-        public ImportFsr4DllDialog(ComponentManagementService componentService)
+        public ImportFsr4DllDialog(ComponentManagementService componentService, CustomDllKind kind = CustomDllKind.Fsr4ModelDll)
         {
             InitializeComponent();
             DialogDimHelper.Register(this);
             _componentService = componentService;
+            _kind = kind;
+            ApplyKindTexts();
 
             this.Opacity = 0;
 
@@ -75,17 +93,40 @@ namespace OptiscalerClient.Views
             AvaloniaXamlLoader.Load(this);
         }
 
+        /// <summary>Adjusts titles and instructions to the DLL kind being imported.</summary>
+        private void ApplyKindTexts()
+        {
+            if (_kind != CustomDllKind.FsrSdkDll)
+                return;
+
+            var title = this.FindControl<TextBlock>("TxtDialogTitle");
+            var subtitle = this.FindControl<TextBlock>("TxtDialogSubtitle");
+            var instruction = this.FindControl<TextBlock>("TxtInstruction");
+            var legal = this.FindControl<TextBlock>("TxtLegalNotice");
+
+            if (legal != null)
+                legal.Text = "This tool does not provide the DLL. You must supply a file you obtained yourself. " +
+                             "amd_fidelityfx_upscaler_dx12.dll is AMD software and is never downloaded, bundled, or linked by this application.";
+            if (title != null) title.Text = "Import Custom FSR SDK DLL";
+            if (subtitle != null) subtitle.Text = "FSR SDK upscaler (amd_fidelityfx_upscaler_dx12.dll)";
+            if (instruction != null)
+                instruction.Text = "Select the amd_fidelityfx_upscaler_dx12.dll you want to use. It replaces the FSR SDK " +
+                                   "upscaler DLL bundled with your OptiScaler release, letting you run a newer FSR 4 SDK " +
+                                   "without waiting for an OptiScaler update. Note: this installs the same file as the " +
+                                   "downloadable \"FSR4 INT8\" component — use one or the other per game, not both.";
+        }
+
         private async void BtnBrowse_Click(object? sender, RoutedEventArgs e)
         {
             try
             {
                 var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
                 {
-                    Title = "Select amdxcffx64.dll",
+                    Title = $"Select {ExpectedDllName}",
                     AllowMultiple = false,
                     FileTypeFilter = new[]
                     {
-                        new FilePickerFileType("amdxcffx64.dll") { Patterns = new[] { ComponentManagementService.CustomFsr4DllName } },
+                        new FilePickerFileType(ExpectedDllName) { Patterns = new[] { ExpectedDllName } },
                         new FilePickerFileType("DLL files") { Patterns = new[] { "*.dll" } },
                         new FilePickerFileType("All files") { Patterns = new[] { "*.*" } }
                     }
@@ -140,19 +181,19 @@ namespace OptiscalerClient.Views
 
             if (!pe.Is64Bit)
             {
-                ShowError("The selected DLL is not a 64-bit (x64) binary. OptiScaler requires the 64-bit amdxcffx64.dll.");
+                ShowError($"The selected DLL is not a 64-bit (x64) binary. OptiScaler requires the 64-bit {ExpectedDllName}.");
                 return;
             }
 
-            // Filename check: warn but allow — the file is renamed to amdxcffx64.dll on import.
+            // Filename check: warn but allow — the file is renamed on import.
             var fileName = Path.GetFileName(path);
-            if (!fileName.Equals(ComponentManagementService.CustomFsr4DllName, StringComparison.OrdinalIgnoreCase))
+            if (!fileName.Equals(ExpectedDllName, StringComparison.OrdinalIgnoreCase))
             {
                 if (pnlRename != null) pnlRename.IsVisible = true;
                 var txtRename = this.FindControl<TextBlock>("TxtRenameWarning");
                 if (txtRename != null)
-                    txtRename.Text = $"The selected file is named '{fileName}', not '{ComponentManagementService.CustomFsr4DllName}'. " +
-                                     "It will be renamed to amdxcffx64.dll when imported. Make sure this really is the FSR 4 driver DLL.";
+                    txtRename.Text = $"The selected file is named '{fileName}', not '{ExpectedDllName}'. " +
+                                     $"It will be renamed to {ExpectedDllName} when imported. Make sure this really is the right DLL.";
             }
 
             // Populate the info card
@@ -185,15 +226,17 @@ namespace OptiscalerClient.Views
             }
             if (txtSha != null) txtSha.Text = string.IsNullOrEmpty(sha256) ? "unavailable" : sha256;
 
-            // FileVersion >= 2.3.0.0 is how OptiScaler detects INT8 (FSR 4.1.1) support;
-            // the 4.0.2c-era DLLs report 2.2.x and lower.
+            // INT8 (FSR 4.1.1) detection thresholds used by OptiScaler:
+            //  - amdxcffx64.dll: FileVersion >= 2.3.0.0 (4.0.2c-era DLLs report 2.2.x)
+            //  - amd_fidelityfx_upscaler_dx12.dll (SDK): FileVersion >= 4.1.1.0
             if (txtHint != null)
             {
+                var threshold = _kind == CustomDllKind.FsrSdkDll ? new Version(4, 1, 1, 0) : new Version(2, 3, 0, 0);
                 if (Version.TryParse(pe.FileVersion ?? "", out var v))
                 {
-                    txtHint.Text = v >= new Version(2, 3, 0, 0)
-                        ? "File version 2.3.0.0 or newer — OptiScaler will treat this as an FSR 4.1.x (INT8-capable) DLL."
-                        : "File version below 2.3.0.0 — OptiScaler will treat this as an older FSR 4.0.x DLL.";
+                    txtHint.Text = v >= threshold
+                        ? $"File version {threshold} or newer — OptiScaler will treat this as an FSR 4.1.x (INT8-capable) DLL."
+                        : $"File version below {threshold} — OptiScaler will treat this as an older FSR 4.0.x-era DLL.";
                 }
                 else
                 {
@@ -226,7 +269,9 @@ namespace OptiscalerClient.Views
 
             try
             {
-                ImportedInfo = await _componentService.ImportCustomFsr4DllAsync(_selectedPath);
+                ImportedInfo = _kind == CustomDllKind.FsrSdkDll
+                    ? await _componentService.ImportCustomFsrSdkDllAsync(_selectedPath)
+                    : await _componentService.ImportCustomFsr4DllAsync(_selectedPath);
                 _ = CloseAnimated();
             }
             catch (Exception ex)

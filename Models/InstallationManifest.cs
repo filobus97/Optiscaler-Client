@@ -62,11 +62,18 @@ namespace OptiscalerClient.Models
         public bool IncludesExtras { get; set; }
         public bool IncludesOptiPatcher { get; set; }
         public bool IncludesCustomFsr4Dll { get; set; }
+        public bool IncludesCustomFsrSdk { get; set; }
 
         /// <summary>
         /// Version label of the user-imported custom amdxcffx64.dll installed with this game, if any.
         /// </summary>
         public string? CustomFsr4DllVersion { get; set; }
+
+        /// <summary>
+        /// Version label of the user-imported custom FSR SDK DLL
+        /// (amd_fidelityfx_upscaler_dx12.dll) installed with this game, if any.
+        /// </summary>
+        public string? CustomFsrSdkVersion { get; set; }
 
         /// <summary>
         /// Name of the OptiScaler profile that was applied during installation

@@ -28,7 +28,7 @@
     <x:String x:Key="TxtGuideStep4Desc">Yüklemeden sonra oyununuzu normal şekilde başlatın. Oyun içinde 'Insert' tuşunu kullanarak OptiScaler menüsünü açın ve ayarlarınızı ayarlayın!</x:String>
 
     <!-- MainWindow -->
-    <x:String x:Key="TxtAppTitle">Optiscaler Client</x:String>
+    <x:String x:Key="TxtAppTitle">Optiscaler Client Next</x:String>
     <x:String x:Key="TxtBtnScan">⟳  Oyunları Tara</x:String>
     <x:String x:Key="TxtBtnAddManual">＋  Manuel Ekle</x:String>
     <x:String x:Key="TxtTipSettings">Ayarlar</x:String>

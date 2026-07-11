@@ -333,6 +333,140 @@ namespace OptiscalerClient.Views
 
             // ── Populate custom FSR4 DLL selector ─────────────────────────────
             PopulateCustomFsr4ComboBox(componentService);
+
+            // ── Populate custom FSR SDK selector ──────────────────────────────
+            // Must run AFTER PopulateExtrasComboBox: when a custom SDK default is
+            // configured it silently overrides the extras auto-selection, since
+            // both components install the same file.
+            PopulateCustomFsrSdkComboBox(componentService);
+        }
+
+        /// <summary>
+        /// Guard used while the FSR4 INT8 / FSR4 Custom SDK selectors are being
+        /// synchronized programmatically, so their SelectionChanged handlers don't
+        /// recurse or show toasts during population.
+        /// </summary>
+        private bool _syncingFsr4Selectors;
+
+        /// <summary>
+        /// Populates CmbCustomFsrSdkVersion with locally imported FSR SDK DLL
+        /// versions + a "None" option. Local-only component (bring your own DLL);
+        /// versions are imported via Settings → Manage Cache → FSR4 Custom SDK.
+        /// </summary>
+        private void PopulateCustomFsrSdkComboBox(ComponentManagementService componentService)
+        {
+            var cmb = this.FindControl<ComboBox>("CmbCustomFsrSdkVersion");
+            if (cmb == null) return;
+
+            cmb.SelectionChanged -= CmbCustomFsrSdkVersion_SelectionChanged;
+            cmb.Items.Clear();
+
+            var versions = componentService.GetDownloadedCustomFsrSdkVersions();
+            if (versions.Count == 0)
+            {
+                cmb.Items.Add(new ComboBoxItem { Content = "None imported", Tag = "none" });
+                cmb.SelectedIndex = 0;
+                cmb.IsEnabled = false;
+                return;
+            }
+            cmb.IsEnabled = true;
+
+            // Option 0: None (opt-in component)
+            cmb.Items.Add(new ComboBoxItem { Content = "None", Tag = "none" });
+
+            foreach (var ver in versions)
+            {
+                var info = componentService.GetCustomFsrSdkDllInfo(ver);
+                var stack = new StackPanel { Orientation = Orientation.Horizontal, Spacing = 6, VerticalAlignment = VerticalAlignment.Center };
+                stack.Children.Add(new TextBlock { Text = ver, VerticalAlignment = VerticalAlignment.Center });
+                if (info is { HasAuthenticodeSignature: true })
+                {
+                    stack.Children.Add(new Border
+                    {
+                        CornerRadius = new CornerRadius(4),
+                        Background = new SolidColorBrush(Color.Parse("#2E7D32")),
+                        Padding = new Thickness(5, 1),
+                        Child = new TextBlock { Text = "SIGNED", FontSize = 10, Foreground = Brushes.White, FontWeight = FontWeight.Bold, VerticalAlignment = VerticalAlignment.Center }
+                    });
+                }
+                cmb.Items.Add(new ComboBoxItem { Content = stack, Tag = ver });
+            }
+
+            // Default selection: configured default if it still exists, otherwise None
+            int targetIndex = 0;
+            var globalDefault = componentService.Config.DefaultCustomFsrSdkVersion;
+            if (!string.IsNullOrEmpty(globalDefault) &&
+                !globalDefault.Equals("none", StringComparison.OrdinalIgnoreCase))
+            {
+                for (int i = 1; i < cmb.Items.Count; i++)
+                {
+                    var itemVer = (cmb.Items[i] as ComboBoxItem)?.Tag?.ToString();
+                    if (string.Equals(itemVer, globalDefault, StringComparison.OrdinalIgnoreCase))
+                    {
+                        targetIndex = i;
+                        break;
+                    }
+                }
+            }
+
+            _syncingFsr4Selectors = true;
+            cmb.SelectedIndex = targetIndex;
+            // Both this component and the FSR4 INT8 extras install
+            // amd_fidelityfx_upscaler_dx12.dll — never leave both selected.
+            if (targetIndex != 0)
+            {
+                var cmbExtras = this.FindControl<ComboBox>("CmbExtrasVersion");
+                if (cmbExtras != null && cmbExtras.Items.Count > 0) cmbExtras.SelectedIndex = 0;
+            }
+            _syncingFsr4Selectors = false;
+
+            cmb.SelectionChanged += CmbCustomFsrSdkVersion_SelectionChanged;
+        }
+
+        /// <summary>
+        /// Keeps the FSR4 INT8 (extras) and FSR4 Custom SDK selectors mutually
+        /// exclusive: both install amd_fidelityfx_upscaler_dx12.dll into the game.
+        /// </summary>
+        private void CmbCustomFsrSdkVersion_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+        {
+            if (_syncingFsr4Selectors) return;
+            var cmbSdk = this.FindControl<ComboBox>("CmbCustomFsrSdkVersion");
+            var cmbExtras = this.FindControl<ComboBox>("CmbExtrasVersion");
+            if (cmbSdk == null || cmbExtras == null) return;
+
+            var sdkTag = (cmbSdk.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+            var extrasTag = (cmbExtras.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+            bool sdkActive = !string.IsNullOrEmpty(sdkTag) && !sdkTag.Equals("none", StringComparison.OrdinalIgnoreCase);
+            bool extrasActive = !string.IsNullOrEmpty(extrasTag) && !extrasTag.Equals("none", StringComparison.OrdinalIgnoreCase);
+
+            if (sdkActive && extrasActive)
+            {
+                _syncingFsr4Selectors = true;
+                cmbExtras.SelectedIndex = 0;
+                _syncingFsr4Selectors = false;
+                _ = ShowToastAsync("FSR4 INT8 deselected — it installs the same file as the custom SDK.");
+            }
+        }
+
+        private void CmbExtrasVersion_SelectionChanged(object? sender, SelectionChangedEventArgs e)
+        {
+            if (_syncingFsr4Selectors) return;
+            var cmbSdk = this.FindControl<ComboBox>("CmbCustomFsrSdkVersion");
+            var cmbExtras = this.FindControl<ComboBox>("CmbExtrasVersion");
+            if (cmbSdk == null || cmbExtras == null) return;
+
+            var sdkTag = (cmbSdk.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+            var extrasTag = (cmbExtras.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+            bool sdkActive = !string.IsNullOrEmpty(sdkTag) && !sdkTag.Equals("none", StringComparison.OrdinalIgnoreCase);
+            bool extrasActive = !string.IsNullOrEmpty(extrasTag) && !extrasTag.Equals("none", StringComparison.OrdinalIgnoreCase);
+
+            if (sdkActive && extrasActive)
+            {
+                _syncingFsr4Selectors = true;
+                cmbSdk.SelectedIndex = 0;
+                _syncingFsr4Selectors = false;
+                _ = ShowToastAsync("FSR4 Custom SDK deselected — it installs the same file as FSR4 INT8.");
+            }
         }
 
         /// <summary>
@@ -562,6 +696,7 @@ namespace OptiscalerClient.Views
             var cmb = this.FindControl<ComboBox>("CmbExtrasVersion");
             if (cmb == null) return;
 
+            cmb.SelectionChanged -= CmbExtrasVersion_SelectionChanged;
             cmb.Items.Clear();
 
             var versions = componentService.ExtrasAvailableVersions;
@@ -658,7 +793,10 @@ namespace OptiscalerClient.Views
                 }
             }
 
+            _syncingFsr4Selectors = true;
             cmb.SelectedIndex = targetIndex;
+            _syncingFsr4Selectors = false;
+            cmb.SelectionChanged += CmbExtrasVersion_SelectionChanged;
         }  // end PopulateExtrasComboBox
 
         /// <summary>
@@ -1216,6 +1354,18 @@ namespace OptiscalerClient.Views
             bool installCustomFsr4 = !string.IsNullOrEmpty(selectedCustomFsr4Version) &&
                                      !selectedCustomFsr4Version.Equals("none", StringComparison.OrdinalIgnoreCase);
 
+            // Read selected custom FSR SDK (amd_fidelityfx_upscaler_dx12.dll) version before any async work
+            var cmbCustomFsrSdkVersion = this.FindControl<ComboBox>("CmbCustomFsrSdkVersion");
+            var selectedCustomFsrSdkItem = cmbCustomFsrSdkVersion?.SelectedItem as ComboBoxItem;
+            var selectedCustomFsrSdkVersion = selectedCustomFsrSdkItem?.Tag?.ToString();
+            bool installCustomFsrSdk = !string.IsNullOrEmpty(selectedCustomFsrSdkVersion) &&
+                                       !selectedCustomFsrSdkVersion.Equals("none", StringComparison.OrdinalIgnoreCase);
+
+            // Safety net behind the UI's mutual exclusion: the custom SDK and the
+            // FSR4 INT8 extras install the same file — the custom SDK wins.
+            if (installCustomFsrSdk)
+                injectExtras = false;
+
             try
             {
                 var componentService = new ComponentManagementService();
@@ -1707,6 +1857,58 @@ namespace OptiscalerClient.Views
                     }
                 }
 
+                // ── Custom FSR SDK (user-imported amd_fidelityfx_upscaler_dx12.dll) ─
+                if (installCustomFsrSdk && !string.IsNullOrEmpty(selectedCustomFsrSdkVersion))
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (bdProgress != null) bdProgress.IsVisible = true;
+                        if (txtProgressState != null) txtProgressState.Text = "Installing custom FSR SDK DLL...";
+                        if (prgDownload != null) prgDownload.IsIndeterminate = true;
+                    });
+
+                    try
+                    {
+                        var cachedSdkPath = componentService.GetCustomFsrSdkDllPath(selectedCustomFsrSdkVersion);
+                        await Task.Run(() =>
+                        {
+                            var installSvc = new GameInstallationService();
+                            installSvc.InstallCustomFsrSdkDll(_game, cachedSdkPath, selectedCustomFsrSdkVersion, overrideGameDir);
+                        });
+                        installedComponents += " + FSR4 Custom SDK";
+                    }
+                    catch (Exception ex)
+                    {
+                        Dispatcher.UIThread.Post(() => { if (bdProgress != null) bdProgress.IsVisible = false; });
+                        await new ConfirmDialog(this, "Warning",
+                            $"Custom FSR SDK installation failed (OptiScaler was still installed):\n{ex.Message}").ShowDialog<object>(this);
+                    }
+                    finally
+                    {
+                        Dispatcher.UIThread.Post(() =>
+                        {
+                            if (prgDownload != null) prgDownload.IsIndeterminate = false;
+                            if (bdProgress != null) bdProgress.IsVisible = false;
+                        });
+                    }
+                }
+                else if (!installCustomFsrSdk && !string.IsNullOrEmpty(_game.CustomFsrSdkVersion))
+                {
+                    // Previously installed but deselected now — remove it cleanly.
+                    try
+                    {
+                        await Task.Run(() =>
+                        {
+                            var installSvc = new GameInstallationService();
+                            installSvc.UninstallCustomFsrSdkDll(_game);
+                        });
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugWindow.Log($"[CustomFsrSdk] Removal on deselect failed: {ex.Message}");
+                    }
+                }
+
                 NeedsScan = true;
                 UpdateStatus();
                 LoadComponents();
@@ -2143,16 +2345,26 @@ namespace OptiscalerClient.Views
                     components.Add($"FSR 4 INT8 mod: {_game.Fsr4ExtraVersion}");
                 }
 
-                if (!string.IsNullOrEmpty(_game.CustomFsr4DllVersion))
+                if (!string.IsNullOrEmpty(_game.CustomFsr4DllVersion) || !string.IsNullOrEmpty(_game.CustomFsrSdkVersion))
                 {
-                    // The DLL may live in a subdirectory (UE games); trust the manifest-backed
-                    // game state but confirm the file when it sits at the install root.
+                    // The DLLs may live in a subdirectory (UE games); trust the manifest-backed
+                    // game state but confirm the file on disk.
                     var installSvc = new GameInstallationService();
                     var dir = installSvc.DetermineInstallDirectory(_game) ?? _game.InstallPath;
-                    bool customDllExists = File.Exists(System.IO.Path.Combine(dir, "amdxcffx64.dll"))
-                                        || File.Exists(System.IO.Path.Combine(_game.InstallPath, "amdxcffx64.dll"));
-                    if (customDllExists)
+
+                    if (!string.IsNullOrEmpty(_game.CustomFsr4DllVersion) &&
+                        (File.Exists(System.IO.Path.Combine(dir, "amdxcffx64.dll"))
+                         || File.Exists(System.IO.Path.Combine(_game.InstallPath, "amdxcffx64.dll"))))
+                    {
                         components.Add($"FSR 4 custom DLL: {_game.CustomFsr4DllVersion}");
+                    }
+
+                    if (!string.IsNullOrEmpty(_game.CustomFsrSdkVersion) &&
+                        (File.Exists(System.IO.Path.Combine(dir, "amd_fidelityfx_upscaler_dx12.dll"))
+                         || File.Exists(System.IO.Path.Combine(_game.InstallPath, "amd_fidelityfx_upscaler_dx12.dll"))))
+                    {
+                        components.Add($"FSR 4 custom SDK: {_game.CustomFsrSdkVersion}");
+                    }
                 }
             }
 

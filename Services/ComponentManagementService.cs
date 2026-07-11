@@ -2419,14 +2419,88 @@ namespace OptiscalerClient.Services
         /// (subdirectory names under Cache/CustomFsr4/ that contain the DLL).
         /// </summary>
         public List<string> GetDownloadedCustomFsr4Versions()
+            => GetUserDllVersions(GetCustomFsr4CachePath(), CustomFsr4DllName);
+
+        /// <summary>Loads the stored metadata for an imported custom FSR4 DLL version, or null.</summary>
+        public CustomFsr4DllInfo? GetCustomFsr4DllInfo(string version)
+            => ReadUserDllInfo(GetCustomFsr4CachePath(version), "CustomFsr4");
+
+        /// <summary>
+        /// Imports a user-supplied amdxcffx64.dll into the local component cache.
+        /// Validates the file is a 64-bit PE, reads its version resource, computes
+        /// the SHA-256, and stores everything under Cache/CustomFsr4/{version}/.
+        /// Re-importing the same version overwrites the previous copy.
+        /// Returns the metadata of the imported DLL.
+        /// </summary>
+        public Task<CustomFsr4DllInfo> ImportCustomFsr4DllAsync(string sourcePath)
+            => ImportUserDllAsync(sourcePath, CustomFsr4DllName, GetCustomFsr4CachePath, "CustomFsr4");
+
+        /// <summary>Deletes an imported custom FSR4 DLL version from the cache.</summary>
+        public void DeleteCustomFsr4Cache(string version)
+        {
+            var cachePath = GetCustomFsr4CachePath(version);
+            if (Directory.Exists(cachePath))
+                Directory.Delete(cachePath, true);
+        }
+
+        // ── Custom FSR SDK amd_fidelityfx_upscaler_dx12.dll (bring-your-own DLL) ─
+        //
+        // Companion to the custom amdxcffx64.dll component: lets the user swap in a
+        // newer FSR SDK upscaler DLL than the one bundled with their OptiScaler
+        // release, without waiting for an OptiScaler update. Same "bring your own
+        // DLL" rules apply — the app never downloads this file.
+        //
+        // NOTE: the downloadable "FSR4 INT8 Extras" component installs the SAME
+        // file, so the two are mutually exclusive per game (enforced in the UI).
+
+        /// <summary>Filename of the FSR SDK upscaler DLL that OptiScaler loads.</summary>
+        public const string CustomFsrSdkDllName = "amd_fidelityfx_upscaler_dx12.dll";
+
+        /// <summary>Returns the root cache directory for custom FSR SDK DLL versions.</summary>
+        public string GetCustomFsrSdkCachePath() => Path.Combine(_cacheDir, "CustomFsrSdk");
+
+        /// <summary>Returns the cache directory for a specific custom FSR SDK DLL version.</summary>
+        public string GetCustomFsrSdkCachePath(string version) => Path.Combine(GetCustomFsrSdkCachePath(), version);
+
+        /// <summary>Returns the full path of the cached SDK DLL for a specific version.</summary>
+        public string GetCustomFsrSdkDllPath(string version) => Path.Combine(GetCustomFsrSdkCachePath(version), CustomFsrSdkDllName);
+
+        /// <summary>
+        /// Returns the locally-imported custom FSR SDK DLL version labels
+        /// (subdirectory names under Cache/CustomFsrSdk/ that contain the DLL).
+        /// </summary>
+        public List<string> GetDownloadedCustomFsrSdkVersions()
+            => GetUserDllVersions(GetCustomFsrSdkCachePath(), CustomFsrSdkDllName);
+
+        /// <summary>Loads the stored metadata for an imported custom FSR SDK DLL version, or null.</summary>
+        public CustomFsr4DllInfo? GetCustomFsrSdkDllInfo(string version)
+            => ReadUserDllInfo(GetCustomFsrSdkCachePath(version), "CustomFsrSdk");
+
+        /// <summary>
+        /// Imports a user-supplied amd_fidelityfx_upscaler_dx12.dll (FSR SDK) into the
+        /// local component cache under Cache/CustomFsrSdk/{version}/.
+        /// </summary>
+        public Task<CustomFsr4DllInfo> ImportCustomFsrSdkDllAsync(string sourcePath)
+            => ImportUserDllAsync(sourcePath, CustomFsrSdkDllName, GetCustomFsrSdkCachePath, "CustomFsrSdk");
+
+        /// <summary>Deletes an imported custom FSR SDK DLL version from the cache.</summary>
+        public void DeleteCustomFsrSdkCache(string version)
+        {
+            var cachePath = GetCustomFsrSdkCachePath(version);
+            if (Directory.Exists(cachePath))
+                Directory.Delete(cachePath, true);
+        }
+
+        // ── Shared bring-your-own-DLL helpers ─────────────────────────────────────
+
+        private static List<string> GetUserDllVersions(string cacheRoot, string dllName)
         {
             var versions = new List<string>();
-            var root = GetCustomFsr4CachePath();
-            if (!Directory.Exists(root)) return versions;
+            if (!Directory.Exists(cacheRoot)) return versions;
 
-            foreach (var dir in Directory.GetDirectories(root))
+            foreach (var dir in Directory.GetDirectories(cacheRoot))
             {
-                if (File.Exists(Path.Combine(dir, CustomFsr4DllName)))
+                if (File.Exists(Path.Combine(dir, dllName)))
                     versions.Add(Path.GetFileName(dir));
             }
 
@@ -2442,10 +2516,9 @@ namespace OptiscalerClient.Services
                 .ToList();
         }
 
-        /// <summary>Loads the stored metadata for an imported custom FSR4 DLL version, or null.</summary>
-        public CustomFsr4DllInfo? GetCustomFsr4DllInfo(string version)
+        private static CustomFsr4DllInfo? ReadUserDllInfo(string versionDir, string logTag)
         {
-            var infoPath = Path.Combine(GetCustomFsr4CachePath(version), "dll_info.json");
+            var infoPath = Path.Combine(versionDir, "dll_info.json");
             if (!File.Exists(infoPath)) return null;
             try
             {
@@ -2454,19 +2527,18 @@ namespace OptiscalerClient.Services
             }
             catch (Exception ex)
             {
-                DebugWindow.Log($"[CustomFsr4] Failed to read dll_info.json for '{version}': {ex.Message}");
+                DebugWindow.Log($"[{logTag}] Failed to read dll_info.json: {ex.Message}");
                 return null;
             }
         }
 
         /// <summary>
-        /// Imports a user-supplied amdxcffx64.dll into the local component cache.
-        /// Validates the file is a 64-bit PE, reads its version resource, computes
-        /// the SHA-256, and stores everything under Cache/CustomFsr4/{version}/.
-        /// Re-importing the same version overwrites the previous copy.
-        /// Returns the metadata of the imported DLL.
+        /// Shared import core for user-supplied DLL components: validates the file is
+        /// a 64-bit PE, reads its version resource, computes the SHA-256, and stores
+        /// DLL + metadata under {cache}/{versionLabel}/. Never downloads anything.
         /// </summary>
-        public async Task<CustomFsr4DllInfo> ImportCustomFsr4DllAsync(string sourcePath)
+        private static async Task<CustomFsr4DllInfo> ImportUserDllAsync(
+            string sourcePath, string dllName, Func<string, string> versionDirFor, string logTag)
         {
             if (!File.Exists(sourcePath))
                 throw new FileNotFoundException("Selected file does not exist.", sourcePath);
@@ -2486,7 +2558,7 @@ namespace OptiscalerClient.Services
                 if (!pe.IsValidPe)
                     throw new InvalidDataException("The selected file is not a valid Windows DLL (missing PE header).");
                 if (!pe.Is64Bit)
-                    throw new InvalidDataException("The selected DLL is not a 64-bit (x64) binary. OptiScaler requires the 64-bit amdxcffx64.dll.");
+                    throw new InvalidDataException($"The selected DLL is not a 64-bit (x64) binary. OptiScaler requires the 64-bit {dllName}.");
 
                 string sha256;
                 using (var sha = System.Security.Cryptography.SHA256.Create())
@@ -2500,9 +2572,9 @@ namespace OptiscalerClient.Services
                     : $"unknown-{sha256[..8].ToLowerInvariant()}";
                 versionLabel = SanitizeVersionName(versionLabel);
 
-                var targetDir = GetCustomFsr4CachePath(versionLabel);
+                var targetDir = versionDirFor(versionLabel);
                 Directory.CreateDirectory(targetDir);
-                File.Copy(sourcePath, Path.Combine(targetDir, CustomFsr4DllName), overwrite: true);
+                File.Copy(sourcePath, Path.Combine(targetDir, dllName), overwrite: true);
 
                 var info = new CustomFsr4DllInfo
                 {
@@ -2518,18 +2590,10 @@ namespace OptiscalerClient.Services
                 var json = JsonSerializer.Serialize(info, OptimizerContext.Default.CustomFsr4DllInfo);
                 File.WriteAllText(Path.Combine(targetDir, "dll_info.json"), json);
 
-                DebugWindow.Log($"[CustomFsr4] Imported '{info.OriginalFileName}' as version '{versionLabel}' " +
+                DebugWindow.Log($"[{logTag}] Imported '{info.OriginalFileName}' as version '{versionLabel}' " +
                                 $"(FileVersion={pe.FileVersion ?? "?"}, signed={pe.HasAuthenticodeSignature}, sha256={sha256[..16]}…)");
                 return info;
             });
-        }
-
-        /// <summary>Deletes an imported custom FSR4 DLL version from the cache.</summary>
-        public void DeleteCustomFsr4Cache(string version)
-        {
-            var cachePath = GetCustomFsr4CachePath(version);
-            if (Directory.Exists(cachePath))
-                Directory.Delete(cachePath, true);
         }
 
         /// <summary>

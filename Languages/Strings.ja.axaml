@@ -28,7 +28,7 @@
     <x:String x:Key="TxtGuideStep4Desc">インストール後、通常通りゲームを起動します。ゲーム内で「Insert」キーを使用してOptiScalerメニューを開き、設定を調整してください！</x:String>
 
     <!-- MainWindow -->
-    <x:String x:Key="TxtAppTitle">Optiscaler Client</x:String>
+    <x:String x:Key="TxtAppTitle">Optiscaler Client Next</x:String>
     <x:String x:Key="TxtBtnScan">⟳  ゲームをスキャン</x:String>
     <x:String x:Key="TxtBtnAddManual">＋  手動で追加</x:String>
     <x:String x:Key="TxtTipSettings">設定</x:String>

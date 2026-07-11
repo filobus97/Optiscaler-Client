@@ -28,7 +28,7 @@
     <x:String x:Key="TxtGuideStep4Desc">Una volta installato, avvia il tuo gioco normalmente. All'interno del gioco, apri il menu OptiScaler usando il tasto 'Insert' per regolare le tue impostazioni!</x:String>
 
     <!-- MainWindow -->
-    <x:String x:Key="TxtAppTitle">Optiscaler Client</x:String>
+    <x:String x:Key="TxtAppTitle">Optiscaler Client Next</x:String>
     <x:String x:Key="TxtBtnScan">⟳  Scansiona giochi</x:String>
     <x:String x:Key="TxtBtnAddManual">＋  Aggiungi manualmente</x:String>
     <x:String x:Key="TxtTipSettings">Impostazioni</x:String>

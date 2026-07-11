@@ -132,8 +132,11 @@ namespace OptiscalerClient.Views
             // ── FSR4 INT8 ────────────────────────────────────────────────────
             sidebar.Children.Add(CreateTopButton("fsr4",      "FSR4 INT8", "\uE726"));
 
-            // \u2500\u2500 FSR4 custom amdxcffx64.dll (bring-your-own DLL) \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500
+            // -- FSR4 custom amdxcffx64.dll (bring-your-own DLL) --------------
             sidebar.Children.Add(CreateTopButton("customfsr4", "FSR4 Custom DLL", "\uF41D"));
+
+            // -- Custom FSR SDK amd_fidelityfx_upscaler_dx12.dll --------------
+            sidebar.Children.Add(CreateTopButton("customsdk", "FSR4 Custom SDK", "\uE71D"));
 
             // ── fakenvapi ────────────────────────────────────────────────────
             sidebar.Children.Add(CreateTopButton("fakenvapi",  "fakenvapi", "\uF193"));
@@ -330,6 +333,7 @@ namespace OptiscalerClient.Views
                 case "optipatcher": RenderOptiPatcher(content); break;
                 case "fsr4":        RenderFsr4(content); break;
                 case "customfsr4":  RenderCustomFsr4(content); break;
+                case "customsdk":   RenderCustomFsrSdk(content); break;
                 case "fakenvapi":   RenderFakenvapi(content); break;
                 case "nukemfg":     RenderNukemfg(content); break;
             }
@@ -455,7 +459,15 @@ namespace OptiscalerClient.Views
                 content.Children.Add(CreateVersionCard(ver, isExtras: true));
         }
 
-        private void RenderCustomFsr4(StackPanel content)
+        private void RenderCustomFsr4(StackPanel content) => RenderUserDllSection(content, isSdk: false);
+
+        private void RenderCustomFsrSdk(StackPanel content) => RenderUserDllSection(content, isSdk: true);
+
+        /// <summary>
+        /// Shared renderer for the two bring-your-own-DLL sections (custom
+        /// amdxcffx64.dll and custom FSR SDK amd_fidelityfx_upscaler_dx12.dll).
+        /// </summary>
+        private void RenderUserDllSection(StackPanel content, bool isSdk)
         {
             content.Children.Add(CreateSetDefaultRow());
 
@@ -463,19 +475,27 @@ namespace OptiscalerClient.Views
             var importRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 16) };
             var btnImport = new Button
             {
-                Name = "BtnImportCustomFsr4",
                 Content = "Import DLL",
                 Padding = new Thickness(12, 5),
                 FontSize = 11
             };
             btnImport.Classes.Add("BtnBase");
-            btnImport.Click += BtnImportCustomFsr4_Click;
+            if (isSdk) btnImport.Click += BtnImportCustomFsrSdk_Click;
+            else btnImport.Click += BtnImportCustomFsr4_Click;
 
             importRow.Children.Add(btnImport);
             Grid.SetColumn(btnImport, 1);
             content.Children.Add(importRow);
 
-            // Legal / sourcing banner
+            // Legal / sourcing + explanation banner
+            var bannerText = isSdk
+                ? "Bring your own DLL: this tool does not provide amd_fidelityfx_upscaler_dx12.dll. You must supply a file you obtained yourself. " +
+                  "The imported DLL replaces the FSR SDK upscaler shipped with your OptiScaler release, so you can use a newer FSR 4 SDK " +
+                  "without waiting for an OptiScaler update. Note: the downloadable \"FSR4 INT8\" component installs the same file — " +
+                  "per game, pick one or the other (the game manager enforces this)."
+                : "Bring your own DLL: this tool does not provide amdxcffx64.dll. You must supply a file you obtained yourself. " +
+                  "This is the driver-side DLL containing the FSR 4 ML models (file version 2.3.x = FSR 4.1.x INT8-capable). " +
+                  "It is installed next to the game executable, where OptiScaler picks it up before the driver store.";
             content.Children.Add(new Border
             {
                 Background = new SolidColorBrush(Color.Parse("#1AFF9800")),
@@ -486,36 +506,40 @@ namespace OptiscalerClient.Views
                 Margin = new Thickness(0, 0, 0, 12),
                 Child = new TextBlock
                 {
-                    Text = "Bring your own DLL: this tool does not provide amdxcffx64.dll. You must supply a file you obtained yourself. " +
-                           "The imported DLL is installed next to the game executable, where OptiScaler picks it up before the driver store.",
+                    Text = bannerText,
                     Foreground = new SolidColorBrush(Color.Parse("#FF9800")),
                     FontSize = 11,
                     TextWrapping = TextWrapping.Wrap
                 }
             });
 
-            var versions = _componentService.GetDownloadedCustomFsr4Versions();
+            var versions = isSdk
+                ? _componentService.GetDownloadedCustomFsrSdkVersions()
+                : _componentService.GetDownloadedCustomFsr4Versions();
             if (versions.Count == 0)
             {
-                content.Children.Add(MakeEmptyLabel("No custom FSR4 DLLs imported."));
+                content.Children.Add(MakeEmptyLabel(isSdk ? "No custom FSR SDK DLLs imported." : "No custom FSR4 DLLs imported."));
                 return;
             }
 
             foreach (var ver in versions)
-                content.Children.Add(CreateCustomFsr4Card(ver));
+                content.Children.Add(CreateUserDllCard(ver, isSdk));
         }
 
         /// <summary>
-        /// Version card for an imported custom FSR4 DLL, including the stored
+        /// Version card for an imported user DLL, including the stored
         /// metadata (file version, signature presence, SHA-256 prefix).
         /// </summary>
-        private Border CreateCustomFsr4Card(string version)
+        private Border CreateUserDllCard(string version, bool isSdk)
         {
             var card = CreateVersionCard(version, isExtras: false, isDeletable: true,
-                isOptiPatcher: false, isNukemFG: false, isFakenvapi: false, isCustomFsr4: true);
+                isOptiPatcher: false, isNukemFG: false, isFakenvapi: false,
+                isCustomFsr4: !isSdk, isCustomFsrSdk: isSdk);
 
             // Enrich the left-hand stack with metadata lines
-            var info = _componentService.GetCustomFsr4DllInfo(version);
+            var info = isSdk
+                ? _componentService.GetCustomFsrSdkDllInfo(version)
+                : _componentService.GetCustomFsr4DllInfo(version);
             if (info != null && card.Child is Grid grid && grid.Children.Count > 0 && grid.Children[0] is StackPanel stack)
             {
                 var secondary = this.FindResource("BrTextSecondary") as IBrush ?? Brushes.Gray;
@@ -611,13 +635,14 @@ namespace OptiscalerClient.Views
                 "optipatcher" => _componentService.Config.DefaultOptiPatcherVersion,
                 "fsr4" => _componentService.Config.DefaultExtrasVersion,
                 "customfsr4" => _componentService.Config.DefaultCustomFsr4DllVersion,
+                "customsdk" => _componentService.Config.DefaultCustomFsrSdkVersion,
                 "fakenvapi" => _componentService.Config.DefaultFakenvapiVersion,
                 "nukemfg" => _componentService.Config.DefaultNukemFGVersion,
                 _ => null
             };
         }
 
-        private Border CreateVersionCard(string version, bool isExtras, bool isDeletable = true, bool isOptiPatcher = false, bool isNukemFG = false, bool isFakenvapi = false, bool isCustomFsr4 = false)
+        private Border CreateVersionCard(string version, bool isExtras, bool isDeletable = true, bool isOptiPatcher = false, bool isNukemFG = false, bool isFakenvapi = false, bool isCustomFsr4 = false, bool isCustomFsrSdk = false)
         {
             var grid = new Grid
             {
@@ -678,7 +703,7 @@ namespace OptiscalerClient.Views
                     Padding = new Thickness(12, 4),
                     FontSize = 11,
                     Margin = new Thickness(8, 0, 0, 0),
-                    Tag = new VersionDeleteInfo { Version = version, IsExtras = isExtras, IsOptiPatcher = isOptiPatcher, IsNukemFG = isNukemFG, IsFakenvapi = isFakenvapi, IsCustomFsr4 = isCustomFsr4 }
+                    Tag = new VersionDeleteInfo { Version = version, IsExtras = isExtras, IsOptiPatcher = isOptiPatcher, IsNukemFG = isNukemFG, IsFakenvapi = isFakenvapi, IsCustomFsr4 = isCustomFsr4, IsCustomFsrSdk = isCustomFsrSdk }
                 };
                 btnDelete.Classes.Add("BtnSecondary");
                 btnDelete.Click += BtnDelete_Click;
@@ -796,7 +821,8 @@ namespace OptiscalerClient.Views
             var nukemfg     = _componentService.GetDownloadedNukemFGVersions();
             var fakenvapi   = _componentService.GetDownloadedFakenvapiVersions();
             var customFsr4  = _componentService.GetDownloadedCustomFsr4Versions();
-            int total       = versions.Count + extras.Count + optiPatcher.Count + nukemfg.Count + fakenvapi.Count + customFsr4.Count;
+            var customSdk   = _componentService.GetDownloadedCustomFsrSdkVersions();
+            int total       = versions.Count + extras.Count + optiPatcher.Count + nukemfg.Count + fakenvapi.Count + customFsr4.Count + customSdk.Count;
             txtCacheInfo.Text = $"{total} items cached locally.";
         }
 
@@ -810,6 +836,7 @@ namespace OptiscalerClient.Views
             public bool IsNukemFG { get; set; }
             public bool IsFakenvapi { get; set; }
             public bool IsCustomFsr4 { get; set; }
+            public bool IsCustomFsrSdk { get; set; }
         }
 
         private async void BtnDelete_Click(object? sender, RoutedEventArgs e)
@@ -817,7 +844,13 @@ namespace OptiscalerClient.Views
             if (sender is Button btn && btn.Tag is VersionDeleteInfo info)
             {
                 string title, msg;
-                if (info.IsCustomFsr4)
+                if (info.IsCustomFsrSdk)
+                {
+                    title = "Delete Custom FSR SDK DLL";
+                    msg = $"Are you sure you want to delete the imported amd_fidelityfx_upscaler_dx12.dll '{info.Version}' from cache?\n" +
+                          "You will need to supply the file again to re-import it.";
+                }
+                else if (info.IsCustomFsr4)
                 {
                     title = "Delete Custom FSR4 DLL";
                     msg = $"Are you sure you want to delete the imported amdxcffx64.dll '{info.Version}' from cache?\n" +
@@ -851,7 +884,9 @@ namespace OptiscalerClient.Views
                 {
                     try
                     {
-                        if (info.IsCustomFsr4)
+                        if (info.IsCustomFsrSdk)
+                            _componentService.DeleteCustomFsrSdkCache(info.Version);
+                        else if (info.IsCustomFsr4)
                             _componentService.DeleteCustomFsr4Cache(info.Version);
                         else if (info.IsFakenvapi)
                             _componentService.DeleteFakenvapiCache(info.Version);
@@ -897,6 +932,9 @@ namespace OptiscalerClient.Views
                 case "customfsr4":
                     _componentService.Config.DefaultCustomFsr4DllVersion = _selectedVersion;
                     break;
+                case "customsdk":
+                    _componentService.Config.DefaultCustomFsrSdkVersion = _selectedVersion;
+                    break;
                 case "fakenvapi":
                     _componentService.Config.DefaultFakenvapiVersion = _selectedVersion;
                     break;
@@ -927,6 +965,9 @@ namespace OptiscalerClient.Views
                     break;
                 case "customfsr4":
                     _componentService.Config.DefaultCustomFsr4DllVersion = null;
+                    break;
+                case "customsdk":
+                    _componentService.Config.DefaultCustomFsrSdkVersion = null;
                     break;
                 case "fakenvapi":
                     _componentService.Config.DefaultFakenvapiVersion = null;
@@ -1013,6 +1054,31 @@ namespace OptiscalerClient.Views
             catch (Exception ex)
             {
                 DebugWindow.Log($"[Cache] Import custom FSR4 DLL failed: {ex}");
+                await new ConfirmDialog(this, "Import Error",
+                    $"Failed to import the DLL:\n{ex.Message}").ShowDialog<object>(this);
+            }
+        }
+
+        // ── Import Custom FSR SDK DLL ──────────────────────────────────────
+
+        private async void BtnImportCustomFsrSdk_Click(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var dialog = new ImportFsr4DllDialog(_componentService, CustomDllKind.FsrSdkDll);
+                await dialog.ShowDialog<object?>(this);
+
+                if (dialog.ImportedInfo != null)
+                {
+                    DebugWindow.Log($"[Cache] Custom FSR SDK DLL imported: {dialog.ImportedInfo.VersionLabel}");
+                    ShowSection("customsdk");
+                    UpdateSidebarSelection("customsdk");
+                    UpdateCacheInfo();
+                }
+            }
+            catch (Exception ex)
+            {
+                DebugWindow.Log($"[Cache] Import custom FSR SDK DLL failed: {ex}");
                 await new ConfirmDialog(this, "Import Error",
                     $"Failed to import the DLL:\n{ex.Message}").ShowDialog<object>(this);
             }
