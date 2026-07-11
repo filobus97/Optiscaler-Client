@@ -4,6 +4,14 @@ on:
   push:
     tags:
       - "v*"
+  # Manual fallback: release without pushing a tag (the release step below
+  # creates the tag). Useful when tags can't be pushed from the local clone.
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "Version to release, without the leading v (e.g. 1.0.6)"
+        required: true
+        type: string
 
 env:
   DOTNET_NOLOGO: true
@@ -46,10 +54,15 @@ jobs:
           # Pinned to the major version targeted by OptiscalerClient.csproj (net10.0)
           dotnet-version: 10.0.x
 
-      - name: Determine version from tag
+      - name: Determine version
         id: version
         shell: bash
-        run: echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
 
       # Untrimmed self-contained single-file publish. PublishTrimmed stays off
       # (see csproj): Avalonia + reflection-based code paths are not verified
@@ -88,15 +101,29 @@ jobs:
     needs: publish
     runs-on: ubuntu-latest
     steps:
+      - name: Determine version
+        id: version
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          fi
+
       - name: Download all artifacts
         uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
 
+      # On workflow_dispatch the tag does not exist yet; tag_name +
+      # target_commitish make action-gh-release create it at the built commit.
       - name: Create release and attach zips
         uses: softprops/action-gh-release@v2
         with:
+          tag_name: v${{ steps.version.outputs.version }}
+          target_commitish: ${{ github.sha }}
           files: artifacts/*.zip
           generate_release_notes: true
           draft: false
