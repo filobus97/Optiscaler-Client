@@ -395,10 +395,23 @@
 
                                 <!-- Row 0, Col 1 : FSR4 INT8 -->
                                 <StackPanel Grid.Row="0" Grid.Column="1">
-                                    <TextBlock Text="FSR4 INT8"
-                                               Foreground="{StaticResource BrTextSecondary}"
-                                               FontSize="{StaticResource FontSizeCaption}"
-                                               Margin="0,32,0,0"/>
+                                    <StackPanel Orientation="Horizontal" Spacing="4" Margin="0,32,0,0">
+                                        <TextBlock Text="FSR4 INT8"
+                                                   Foreground="{StaticResource BrTextSecondary}"
+                                                   FontSize="{StaticResource FontSizeCaption}"
+                                                   VerticalAlignment="Center"/>
+                                        <Border Background="{StaticResource BrBgElevated}"
+                                                BorderBrush="{StaticResource BrBorderSubtle}"
+                                                BorderThickness="1" CornerRadius="8"
+                                                Width="16" Height="16"
+                                                ToolTip.ShowDelay="100" Cursor="Help"
+                                                ToolTip.Tip="Downloads a community-patched amd_fidelityfx_upscaler_dx12.dll with the older FSR 4.0.2c INT8 model for pre-RDNA4 GPUs. Mutually exclusive with the FSR4 Custom SDK selector (both install the same file). If you use a custom amdxcffx64.dll (FSR 4.1.x), this is usually not needed.">
+                                            <TextBlock Text="?" Foreground="{StaticResource BrTextSecondary}"
+                                                       FontSize="10" FontWeight="Bold"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Margin="0,-1,0,0"/>
+                                        </Border>
+                                    </StackPanel>
                                     <ComboBox Name="CmbExtrasVersion"
                                               Margin="0,4,0,0"
                                               HorizontalAlignment="Stretch"
@@ -428,6 +441,34 @@
                                         </Border>
                                     </StackPanel>
                                     <ComboBox Name="CmbCustomFsr4Version"
+                                              Margin="0,4,0,0"
+                                              HorizontalAlignment="Stretch"
+                                              Classes="BtnSelector"
+                                              Padding="8,0,24,0"
+                                              HorizontalContentAlignment="Left"
+                                              VerticalContentAlignment="Center"/>
+                                </StackPanel>
+
+                                <!-- Row 2, Col 2 : Custom FSR SDK (bring-your-own amd_fidelityfx_upscaler_dx12.dll) -->
+                                <StackPanel Grid.Row="2" Grid.Column="2">
+                                    <StackPanel Orientation="Horizontal" Spacing="4">
+                                        <TextBlock Text="FSR4 Custom SDK"
+                                                   Foreground="{StaticResource BrTextSecondary}"
+                                                   FontSize="{StaticResource FontSizeCaption}"
+                                                   VerticalAlignment="Center"/>
+                                        <Border Background="{StaticResource BrBgElevated}"
+                                                BorderBrush="{StaticResource BrBorderSubtle}"
+                                                BorderThickness="1" CornerRadius="8"
+                                                Width="16" Height="16"
+                                                ToolTip.ShowDelay="100" Cursor="Help"
+                                                ToolTip.Tip="Installs a user-imported amd_fidelityfx_upscaler_dx12.dll (FSR SDK), replacing the one bundled with the selected OptiScaler release — useful for running a newer FSR 4 SDK without waiting for an OptiScaler update. Import your DLL under Settings → Manage Cache → FSR4 Custom SDK. Mutually exclusive with the FSR4 INT8 selector (both install the same file). This tool does not provide the DLL.">
+                                            <TextBlock Text="?" Foreground="{StaticResource BrTextSecondary}"
+                                                       FontSize="10" FontWeight="Bold"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Margin="0,-1,0,0"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <ComboBox Name="CmbCustomFsrSdkVersion"
                                               Margin="0,4,0,0"
                                               HorizontalAlignment="Stretch"
                                               Classes="BtnSelector"
