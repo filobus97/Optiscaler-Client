@@ -147,6 +147,11 @@ namespace OptiscalerClient.Views
                 DebugWindow.Log("Application Started in DEBUG mode.");
             }
 
+            // Window title: app name + version (overrides the TxtAppTitle resource
+            // binding; the name is identical across all language files).
+            var asmVersion = System.Reflection.Assembly.GetExecutingAssembly().GetName().Version;
+            this.Title = $"Optiscaler Client Next v{asmVersion?.ToString(3) ?? App.AppVersion}";
+
             _componentService.OnStatusChanged += ComponentStatusChanged;
             this.Loaded += MainWindow_Loaded;
             this.Closed += MainWindow_Closed;
