@@ -139,6 +139,11 @@ namespace OptiscalerClient.Models
         /// Null or "none" means "do not install".
         /// </summary>
         public string? DefaultCustomFsr4DllVersion { get; set; } = null;
+        /// <summary>
+        /// The default custom FSR SDK (amd_fidelityfx_upscaler_dx12.dll) version to
+        /// pre-select in ManageGameWindow. Null or "none" means "do not install".
+        /// </summary>
+        public string? DefaultCustomFsrSdkVersion { get; set; } = null;
         public ScanSourcesConfig ScanSources { get; set; } = new();
         public string SteamGridDBApiKey { get; set; } = string.Empty;
         public List<ScanExclusion> ScanExclusions { get; set; } = new();

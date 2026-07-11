@@ -61,6 +61,11 @@ public class Game
     /// installed into this game, or null when not installed.
     /// </summary>
     public string? CustomFsr4DllVersion { get; set; }
+    /// <summary>
+    /// Version label of the user-imported custom FSR SDK upscaler DLL
+    /// (amd_fidelityfx_upscaler_dx12.dll) installed into this game, or null.
+    /// </summary>
+    public string? CustomFsrSdkVersion { get; set; }
 
     public bool HasUpscaler => DlssVersion != null || DlssFrameGenVersion != null || FsrVersion != null || XessVersion != null || IsOptiscalerInstalled;
 
