@@ -4,6 +4,12 @@ on:
   push:
     tags:
       - "v*"
+    # Merge-based fallback: a push to main whose commit message contains
+    # "[release]" also cuts a release (version read from the csproj, tag
+    # created by the release job). Useful when tags can't be pushed directly.
+    # Pushes to main WITHOUT the marker skip all jobs via the job-level "if".
+    branches:
+      - main
   # Manual fallback: release without pushing a tag (the release step below
   # creates the tag). Useful when tags can't be pushed from the local clone.
   workflow_dispatch:
@@ -20,9 +26,15 @@ env:
 permissions:
   contents: write
 
+# A branch push only releases when explicitly marked; tags and manual
+# dispatches always release.
 jobs:
   publish:
     name: Publish (${{ matrix.rid }})
+    if: >
+      github.event_name == 'workflow_dispatch' ||
+      startsWith(github.ref, 'refs/tags/') ||
+      contains(github.event.head_commit.message, '[release]')
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -60,8 +72,12 @@ jobs:
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-          else
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            # [release]-marked push to main: the csproj is the source of truth
+            v=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' OptiscalerClient.csproj | head -1)
+            echo "version=$v" >> "$GITHUB_OUTPUT"
           fi
 
       # Untrimmed self-contained single-file publish. PublishTrimmed stays off
@@ -101,14 +117,19 @@ jobs:
     needs: publish
     runs-on: ubuntu-latest
     steps:
+      - uses: actions/checkout@v4
+
       - name: Determine version
         id: version
         shell: bash
         run: |
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             echo "version=${{ inputs.version }}" >> "$GITHUB_OUTPUT"
-          else
+          elif [[ "$GITHUB_REF" == refs/tags/* ]]; then
             echo "version=${GITHUB_REF_NAME#v}" >> "$GITHUB_OUTPUT"
+          else
+            v=$(sed -n 's:.*<Version>\(.*\)</Version>.*:\1:p' OptiscalerClient.csproj | head -1)
+            echo "version=$v" >> "$GITHUB_OUTPUT"
           fi
 
       - name: Download all artifacts
