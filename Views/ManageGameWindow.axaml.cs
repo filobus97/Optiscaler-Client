@@ -2347,10 +2347,13 @@ namespace OptiscalerClient.Views
 
                 if (!string.IsNullOrEmpty(_game.CustomFsr4DllVersion) || !string.IsNullOrEmpty(_game.CustomFsrSdkVersion))
                 {
-                    // The DLLs may live in a subdirectory (UE games); trust the manifest-backed
-                    // game state but confirm the file on disk.
-                    var installSvc = new GameInstallationService();
-                    var dir = installSvc.DetermineInstallDirectory(_game) ?? _game.InstallPath;
+                    // The DLLs may live in a subdirectory (UE games). Read the install
+                    // directory from the manifest (one small json read) instead of
+                    // re-scanning the game folder on every status refresh.
+                    var manifestDir = new BackupStoreService().LoadManifest(_game.InstallPath)?.InstalledGameDirectory;
+                    var dir = !string.IsNullOrEmpty(manifestDir) && Directory.Exists(manifestDir)
+                        ? manifestDir
+                        : _game.InstallPath;
 
                     if (!string.IsNullOrEmpty(_game.CustomFsr4DllVersion) &&
                         (File.Exists(System.IO.Path.Combine(dir, "amdxcffx64.dll"))

@@ -405,7 +405,7 @@
                                                 BorderThickness="1" CornerRadius="8"
                                                 Width="16" Height="16"
                                                 ToolTip.ShowDelay="100" Cursor="Help"
-                                                ToolTip.Tip="Downloads a community-patched amd_fidelityfx_upscaler_dx12.dll with the older FSR 4.0.2c INT8 model for pre-RDNA4 GPUs. Mutually exclusive with the FSR4 Custom SDK selector (both install the same file). If you use a custom amdxcffx64.dll (FSR 4.1.x), this is usually not needed.">
+                                                ToolTip.Tip="What it does: downloads a community-patched amd_fidelityfx_upscaler_dx12.dll (older FSR 4.0.2c INT8 model for pre-RDNA4 GPUs) and copies it next to the game executable, replacing OptiScaler's bundled copy. To replicate manually: drop the DLL beside the game's .exe. Mutually exclusive with FSR4 Custom SDK (same file). Usually unnecessary if you use a 4.1.x custom amdxcffx64.dll.">
                                             <TextBlock Text="?" Foreground="{StaticResource BrTextSecondary}"
                                                        FontSize="10" FontWeight="Bold"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -433,7 +433,7 @@
                                                 BorderThickness="1" CornerRadius="8"
                                                 Width="16" Height="16"
                                                 ToolTip.ShowDelay="100" Cursor="Help"
-                                                ToolTip.Tip="Installs a user-imported amdxcffx64.dll (e.g. FSR 4.1.x INT8) next to the game executable so OptiScaler loads it instead of the driver's copy. Import your DLL under Settings → Manage Cache → FSR4 Custom DLL. This tool does not provide the DLL.">
+                                                ToolTip.Tip="What it does: copies your imported amdxcffx64.dll (the FSR 4 ML-model DLL; file version 2.3.x = 4.1.x INT8) next to the game executable — OptiScaler checks there before the driver store — backs up any existing copy to the app's backup store, and sets [FSR] UpscalerIndex=0 and Fsr4Update=true in OptiScaler.ini. Removal restores the backup and reverts the keys to auto. To replicate manually: drop the DLL beside the game's .exe and edit those two ini keys. Import via Settings → Manage Cache → FSR4 Custom DLL. This tool does not provide the DLL.">
                                             <TextBlock Text="?" Foreground="{StaticResource BrTextSecondary}"
                                                        FontSize="10" FontWeight="Bold"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"
@@ -461,7 +461,7 @@
                                                 BorderThickness="1" CornerRadius="8"
                                                 Width="16" Height="16"
                                                 ToolTip.ShowDelay="100" Cursor="Help"
-                                                ToolTip.Tip="Installs a user-imported FSR SDK package (upscaler + frame generation + companion DLLs), replacing the copies bundled with the selected OptiScaler release — run a newer FSR 4 SDK without waiting for an OptiScaler update. Import from an extracted SDK folder or archive under Settings → Manage Cache → FSR4 Custom SDK. Mutually exclusive with the FSR4 INT8 selector (same upscaler file). This tool does not provide the DLLs.">
+                                                ToolTip.Tip="What it does: copies every DLL of your imported FSR SDK package (amd_fidelityfx_upscaler_dx12.dll + frame generation + companions) next to the game executable, replacing the copies bundled with the selected OptiScaler release, backs up what was there, and sets [FSR] UpscalerIndex=0 and Fsr4Update=true in OptiScaler.ini. Removal restores backups and puts OptiScaler's own bundled DLLs back. To replicate manually: drop the SDK DLLs beside the game's .exe and edit those two ini keys. Import from an SDK folder or archive via Settings → Manage Cache → FSR4 Custom SDK. Mutually exclusive with FSR4 INT8 (same upscaler file). This tool does not provide the DLLs.">
                                             <TextBlock Text="?" Foreground="{StaticResource BrTextSecondary}"
                                                        FontSize="10" FontWeight="Bold"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"

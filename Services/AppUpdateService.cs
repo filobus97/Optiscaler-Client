@@ -159,25 +159,32 @@ namespace OptiscalerClient.Services
 
                     if (doc.RootElement.TryGetProperty("assets", out var assets))
                     {
+                        // This fork publishes per-platform zips named
+                        // OptiscalerClient-<version>-<rid>.zip — prefer the zip that
+                        // matches the running OS/architecture, then upstream's legacy
+                        // OptiscalerClient_Portable.zip, then any zip.
+                        string ridMarker =
+                            System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.Windows) ? "-win-x64" :
+                            System.Runtime.InteropServices.RuntimeInformation.IsOSPlatform(System.Runtime.InteropServices.OSPlatform.OSX)
+                                ? (System.Runtime.InteropServices.RuntimeInformation.OSArchitecture == System.Runtime.InteropServices.Architecture.Arm64 ? "-osx-arm64" : "-osx-x64")
+                                : "-linux-x64";
+
+                        string? ridMatch = null, portableMatch = null, anyZip = null;
                         foreach (var asset in assets.EnumerateArray())
                         {
-                            if (asset.TryGetProperty("browser_download_url", out var downloadProp))
-                            {
-                                var assetUrl = downloadProp.GetString();
-                                if (assetUrl != null && assetUrl.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
-                                {
-                                    if (assetUrl.Contains("OptiscalerClient_Portable.zip", StringComparison.OrdinalIgnoreCase))
-                                    {
-                                        DownloadUrl = assetUrl;
-                                        break;
-                                    }
-                                    else if (DownloadUrl == null)
-                                    {
-                                        DownloadUrl = assetUrl; // Fallback just in case
-                                    }
-                                }
-                            }
+                            if (!asset.TryGetProperty("browser_download_url", out var downloadProp))
+                                continue;
+                            var assetUrl = downloadProp.GetString();
+                            if (assetUrl == null || !assetUrl.EndsWith(".zip", StringComparison.OrdinalIgnoreCase))
+                                continue;
+
+                            if (assetUrl.Contains(ridMarker, StringComparison.OrdinalIgnoreCase))
+                                ridMatch ??= assetUrl;
+                            else if (assetUrl.Contains("OptiscalerClient_Portable.zip", StringComparison.OrdinalIgnoreCase))
+                                portableMatch ??= assetUrl;
+                            anyZip ??= assetUrl;
                         }
+                        DownloadUrl = ridMatch ?? portableMatch ?? anyZip;
                     }
 
                     // More robust way to get current version
