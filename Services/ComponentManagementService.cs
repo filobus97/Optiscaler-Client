@@ -209,6 +209,25 @@ namespace OptiscalerClient.Services
                         }
                     }
 
+                    // Fork migration: upstream's template pointed the in-app updater at
+                    // the original repository. This fork ("OptiScaler Client Next")
+                    // publishes its own releases, so retarget once for existing configs.
+                    if (_config.App.RepoOwner == "Agustinm28" &&
+                        _config.App.RepoName == "Optiscaler-Client")
+                    {
+                        _config.App = new RepositoryConfig { RepoOwner = "filobus97", RepoName = "Optiscaler-Client" };
+                        try
+                        {
+                            var json = JsonSerializer.Serialize(_config, OptimizerContext.Default.AppConfiguration);
+                            File.WriteAllText(_configFile, json);
+                            DebugWindow.Log("[Config] Retargeted App update repo to the fork (filobus97/Optiscaler-Client).");
+                        }
+                        catch (Exception ex)
+                        {
+                            DebugWindow.Log($"[Config] Failed to persist App repo migration: {ex.Message}");
+                        }
+                    }
+
                     _sharedConfig = _config;
                 }
             }

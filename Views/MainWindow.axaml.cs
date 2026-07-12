@@ -3838,8 +3838,8 @@ namespace OptiscalerClient.Views
         {
             try
             {
-                var repoOwner = _componentService.Config.App.RepoOwner ?? "Agustinm28";
-                var repoName = _componentService.Config.App.RepoName ?? "Optiscaler-Switcher";
+                var repoOwner = _componentService.Config.App.RepoOwner ?? "filobus97";
+                var repoName = _componentService.Config.App.RepoName ?? "Optiscaler-Client";
                 var url = $"https://github.com/{repoOwner}/{repoName}";
 
                 System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
@@ -4591,8 +4591,14 @@ namespace OptiscalerClient.Views
                         });
 
                         // ── FSR4 INT8 DLL injection (respect configured default extras)
+                        // Skipped when a custom FSR SDK default is configured: both
+                        // install amd_fidelityfx_upscaler_dx12.dll and the SDK wins.
                         var configuredExtras = _componentService.Config.DefaultExtrasVersion;
-                        if (!string.IsNullOrEmpty(configuredExtras) && !configuredExtras.Equals("none", StringComparison.OrdinalIgnoreCase))
+                        var configuredCustomSdk = _componentService.Config.DefaultCustomFsrSdkVersion;
+                        bool customSdkConfigured = !string.IsNullOrEmpty(configuredCustomSdk) &&
+                                                   !configuredCustomSdk.Equals("none", StringComparison.OrdinalIgnoreCase);
+                        if (!customSdkConfigured &&
+                            !string.IsNullOrEmpty(configuredExtras) && !configuredExtras.Equals("none", StringComparison.OrdinalIgnoreCase))
                         {
                             try
                             {
@@ -4625,6 +4631,57 @@ namespace OptiscalerClient.Views
                                     $"FSR4 INT8 download/inject failed (OptiScaler was still installed):\n{ex.Message}",
                                     isAlert: true
                                 ).ShowDialog<bool>(this);
+                            }
+                        }
+
+                        // ── Custom FSR SDK package (respect configured default; local-only)
+                        if (customSdkConfigured)
+                        {
+                            try
+                            {
+                                var sdkCacheDir = _componentService.GetCustomFsrSdkCachePath(configuredCustomSdk!);
+                                if (!Directory.Exists(sdkCacheDir))
+                                    throw new Exception($"Custom FSR SDK '{configuredCustomSdk}' is not in the local cache. Re-import it via Settings → Manage Cache.");
+
+                                ShowToast($"Installing custom FSR SDK v{configuredCustomSdk}...", showProgress: false, progressPercent: null);
+                                await Task.Run(() =>
+                                {
+                                    var installSvc = new GameInstallationService();
+                                    installSvc.InstallCustomFsrSdk(selectedGame, sdkCacheDir, configuredCustomSdk!);
+                                });
+                            }
+                            catch (Exception ex)
+                            {
+                                HideToast();
+                                await new ConfirmDialog(this, GetResourceString("TxtWarning", "Warning"),
+                                    $"Custom FSR SDK install failed (OptiScaler was still installed):\n{ex.Message}",
+                                    isAlert: true).ShowDialog<bool>(this);
+                            }
+                        }
+
+                        // ── Custom FSR4 DLL amdxcffx64.dll (respect configured default; local-only)
+                        var configuredCustomDll = _componentService.Config.DefaultCustomFsr4DllVersion;
+                        if (!string.IsNullOrEmpty(configuredCustomDll) && !configuredCustomDll.Equals("none", StringComparison.OrdinalIgnoreCase))
+                        {
+                            try
+                            {
+                                var dllPath = _componentService.GetCustomFsr4DllPath(configuredCustomDll);
+                                if (!File.Exists(dllPath))
+                                    throw new Exception($"Custom FSR4 DLL '{configuredCustomDll}' is not in the local cache. Re-import it via Settings → Manage Cache.");
+
+                                ShowToast($"Installing custom FSR4 DLL v{configuredCustomDll}...", showProgress: false, progressPercent: null);
+                                await Task.Run(() =>
+                                {
+                                    var installSvc = new GameInstallationService();
+                                    installSvc.InstallCustomFsr4Dll(selectedGame, dllPath, configuredCustomDll);
+                                });
+                            }
+                            catch (Exception ex)
+                            {
+                                HideToast();
+                                await new ConfirmDialog(this, GetResourceString("TxtWarning", "Warning"),
+                                    $"Custom FSR4 DLL install failed (OptiScaler was still installed):\n{ex.Message}",
+                                    isAlert: true).ShowDialog<bool>(this);
                             }
                         }
 

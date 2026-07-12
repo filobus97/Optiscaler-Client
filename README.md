@@ -56,7 +56,7 @@
 - **Nukem's DLSSG-to-FSR3** — Frame generation bridge that converts DLSS Frame Gen to FSR3.
 - **FSR 4 INT8 Extras** — INT8 shader injection for non-RDNA 4 GPUs.
 - **FSR 4.x Custom DLL (bring your own)** — *fork addition:* installs a **user-supplied** `amdxcffx64.dll` (e.g. a newer FSR 4.1.x INT8 build) next to the game executable, where OptiScaler loads it before the driver store. See [Custom FSR 4 DLLs](#-custom-fsr-4-dlls-bring-your-own) below.
-- **FSR SDK Custom DLL (bring your own)** — *fork addition:* installs a **user-supplied** `amd_fidelityfx_upscaler_dx12.dll`, replacing the FSR SDK bundled with the installed OptiScaler release — run a newer FSR 4 SDK without waiting for an OptiScaler update. Mutually exclusive per game with the FSR 4 INT8 Extras (same target file).
+- **FSR SDK Custom Package (bring your own)** — *fork addition:* imports a **user-supplied** FSR SDK from an extracted folder or archive (`amd_fidelityfx_upscaler_dx12.dll` + frame generation + companion DLLs) and installs the whole set, replacing the FSR SDK bundled with the installed OptiScaler release — run a newer FSR 4 SDK without waiting for an OptiScaler update. Mutually exclusive per game with the FSR 4 INT8 Extras (same upscaler file).
 - **OptiPatcher** — ASI plugin loader, automatically configured with `LoadAsiPlugins=true` in OptiScaler.ini.
 
 ### Profiles
@@ -162,6 +162,29 @@ Notes:
 
 - The **FSR4 Custom SDK** selector and the classic **FSR4 INT8** (Extras) selector install the *same file* — the game manager keeps them mutually exclusive and deselects one when you pick the other. With a 4.1.x `amdxcffx64.dll` the old INT8 Extras are normally unnecessary.
 - If the selected OptiScaler version is older than **v0.7.8** (or nightly **0.7.7-pre9**), the app warns you to update OptiScaler first, since older builds do not load `amdxcffx64.dll` from the game folder.
+
+---
+
+## 🔍 Under the hood (no black boxes)
+
+Everything this app does to a game folder is plain file operations you can replicate — or undo — by hand. Per component:
+
+| Component | Files placed next to the game .exe | OptiScaler.ini keys set | On removal |
+|---|---|---|---|
+| OptiScaler | The OptiScaler package (main DLL renamed to your chosen injection name, e.g. `dxgi.dll`, plus its support files) | Written from your selected profile | Originals restored from backup, created files deleted |
+| Fakenvapi | `nvapi64.dll`, `fakenvapi.ini` | — | Restored/deleted via manifest |
+| NukemFG | `dlssg_to_fsr3_amd_is_better.dll` | `[General] FGType=nukems` | Restored/deleted via manifest |
+| FSR4 INT8 (Extras) | `amd_fidelityfx_upscaler_dx12.dll` (community 4.0.2c INT8 build) | — | Cleaned on uninstall |
+| FSR4 Custom DLL | your `amdxcffx64.dll` | `[FSR] UpscalerIndex=0`, `Fsr4Update=true` | Backup restored, keys reverted to `auto` |
+| FSR4 Custom SDK | your SDK package (`amd_fidelityfx_upscaler_dx12.dll` + companions) | `[FSR] UpscalerIndex=0`, `Fsr4Update=true` | Backups restored, OptiScaler's bundled DLLs put back, keys reverted |
+| OptiPatcher | `plugins/OptiPatcher.asi` | `LoadAsiPlugins=true` | Removed on uninstall |
+
+Bookkeeping lives outside the game folder, in the app's data directory (`%APPDATA%/OptiscalerClient` on Windows, `~/.config/OptiscalerClient` on Linux):
+
+- `Backups/<game-slug>/manifest.json` — exactly which files were created vs overwritten, with SHA-256 hashes; `Backups/<game-slug>/files/` holds the pre-install originals.
+- `Cache/<Component>/<version>/` — every downloaded or imported component version; imported DLL packages carry a `dll_info.json` with per-file versions, hashes, and signature info.
+
+Every selector in the game manager has a "?" tooltip stating exactly what it will do. Known limitation: **Bulk Install** does not yet offer the two custom (bring-your-own) components — use per-game Manage or Quick Install with configured defaults for those.
 
 ---
 
