@@ -1869,11 +1869,11 @@ namespace OptiscalerClient.Views
 
                     try
                     {
-                        var cachedSdkPath = componentService.GetCustomFsrSdkDllPath(selectedCustomFsrSdkVersion);
+                        var sdkCacheDir = componentService.GetCustomFsrSdkCachePath(selectedCustomFsrSdkVersion);
                         await Task.Run(() =>
                         {
                             var installSvc = new GameInstallationService();
-                            installSvc.InstallCustomFsrSdkDll(_game, cachedSdkPath, selectedCustomFsrSdkVersion, overrideGameDir);
+                            installSvc.InstallCustomFsrSdk(_game, sdkCacheDir, selectedCustomFsrSdkVersion, overrideGameDir);
                         });
                         installedComponents += " + FSR4 Custom SDK";
                     }

@@ -51,6 +51,7 @@ namespace OptiscalerClient.Views
         private readonly CustomDllKind _kind;
         private string? _selectedPath;
         private PeFileInfo? _selectedPeInfo;
+        private ComponentManagementService.FsrSdkScanResult? _sdkScan;
         private bool _isAnimatingClose;
 
         private string ExpectedDllName => _kind == CustomDllKind.FsrSdkDll
@@ -105,31 +106,46 @@ namespace OptiscalerClient.Views
             var legal = this.FindControl<TextBlock>("TxtLegalNotice");
 
             if (legal != null)
-                legal.Text = "This tool does not provide the DLL. You must supply a file you obtained yourself. " +
-                             "amd_fidelityfx_upscaler_dx12.dll is AMD software and is never downloaded, bundled, or linked by this application.";
-            if (title != null) title.Text = "Import Custom FSR SDK DLL";
-            if (subtitle != null) subtitle.Text = "FSR SDK upscaler (amd_fidelityfx_upscaler_dx12.dll)";
+                legal.Text = "This tool does not provide the DLLs. You must supply files you obtained yourself. " +
+                             "The FSR SDK DLLs are AMD software and are never downloaded, bundled, or linked by this application.";
+            if (title != null) title.Text = "Import Custom FSR SDK";
+            if (subtitle != null) subtitle.Text = "FSR SDK package (upscaler + companion DLLs)";
             if (instruction != null)
-                instruction.Text = "Select the amd_fidelityfx_upscaler_dx12.dll you want to use. It replaces the FSR SDK " +
-                                   "upscaler DLL bundled with your OptiScaler release, letting you run a newer FSR 4 SDK " +
-                                   "without waiting for an OptiScaler update. Note: this installs the same file as the " +
-                                   "downloadable \"FSR4 INT8\" component — use one or the other per game, not both.";
+                instruction.Text = "Point to an extracted FSR SDK folder, the SDK archive (.zip/.7z), or a single DLL. " +
+                                   "All known FSR SDK DLLs found inside (upscaler, frame generation, and companions — " +
+                                   "subfolders included) are imported as one package and installed together, replacing " +
+                                   "the copies bundled with your OptiScaler release. amd_fidelityfx_upscaler_dx12.dll " +
+                                   "is required; the rest are optional. Note: the downloadable \"FSR4 INT8\" component " +
+                                   "installs the same upscaler file — use one or the other per game, not both.";
+
+            var btnFolder = this.FindControl<Button>("BtnBrowseFolder");
+            if (btnFolder != null) btnFolder.IsVisible = true;
         }
 
         private async void BtnBrowse_Click(object? sender, RoutedEventArgs e)
         {
             try
             {
-                var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
-                {
-                    Title = $"Select {ExpectedDllName}",
-                    AllowMultiple = false,
-                    FileTypeFilter = new[]
+                var filters = _kind == CustomDllKind.FsrSdkDll
+                    ? new[]
+                    {
+                        new FilePickerFileType("FSR SDK (archive or DLL)") { Patterns = new[] { "*.zip", "*.7z", "*.dll" } },
+                        new FilePickerFileType("Archives") { Patterns = new[] { "*.zip", "*.7z", "*.rar" } },
+                        new FilePickerFileType("DLL files") { Patterns = new[] { "*.dll" } },
+                        new FilePickerFileType("All files") { Patterns = new[] { "*.*" } }
+                    }
+                    : new[]
                     {
                         new FilePickerFileType(ExpectedDllName) { Patterns = new[] { ExpectedDllName } },
                         new FilePickerFileType("DLL files") { Patterns = new[] { "*.dll" } },
                         new FilePickerFileType("All files") { Patterns = new[] { "*.*" } }
-                    }
+                    };
+
+                var files = await StorageProvider.OpenFilePickerAsync(new FilePickerOpenOptions
+                {
+                    Title = _kind == CustomDllKind.FsrSdkDll ? "Select FSR SDK archive or DLL" : $"Select {ExpectedDllName}",
+                    AllowMultiple = false,
+                    FileTypeFilter = filters
                 });
 
                 if (files == null || files.Count == 0) return;
@@ -137,12 +153,154 @@ namespace OptiscalerClient.Views
                 var path = files[0].Path.IsAbsoluteUri ? files[0].Path.LocalPath : files[0].TryGetLocalPath();
                 if (string.IsNullOrEmpty(path)) return;
 
-                await InspectSelectionAsync(path);
+                if (_kind == CustomDllKind.FsrSdkDll)
+                    await InspectSdkSourceAsync(path);
+                else
+                    await InspectSelectionAsync(path);
             }
             catch (Exception ex)
             {
                 DebugWindow.Log($"[CustomFsr4] Browse failed: {ex.Message}");
             }
+        }
+
+        private async void BtnBrowseFolder_Click(object? sender, RoutedEventArgs e)
+        {
+            try
+            {
+                var folders = await StorageProvider.OpenFolderPickerAsync(new FolderPickerOpenOptions
+                {
+                    Title = "Select extracted FSR SDK folder",
+                    AllowMultiple = false
+                });
+
+                if (folders == null || folders.Count == 0) return;
+
+                var path = folders[0].Path.IsAbsoluteUri ? folders[0].Path.LocalPath : folders[0].TryGetLocalPath();
+                if (string.IsNullOrEmpty(path)) return;
+
+                await InspectSdkSourceAsync(path);
+            }
+            catch (Exception ex)
+            {
+                DebugWindow.Log($"[CustomFsrSdk] Folder browse failed: {ex.Message}");
+            }
+        }
+
+        /// <summary>
+        /// SDK mode: scans the selected folder/archive/DLL for the FSR SDK DLL set
+        /// and previews what would be imported.
+        /// </summary>
+        private async Task InspectSdkSourceAsync(string path)
+        {
+            var txtPath = this.FindControl<TextBox>("TxtSelectedPath");
+            var pnlInfo = this.FindControl<Border>("PnlDllInfo");
+            var pnlError = this.FindControl<Border>("PnlError");
+            var pnlRename = this.FindControl<Border>("PnlRenameWarning");
+            var btnImport = this.FindControl<Button>("BtnImport");
+
+            if (txtPath != null) txtPath.Text = path;
+            if (pnlInfo != null) pnlInfo.IsVisible = false;
+            if (pnlError != null) pnlError.IsVisible = false;
+            if (pnlRename != null) pnlRename.IsVisible = false;
+            if (btnImport != null) btnImport.IsEnabled = false;
+
+            _sdkScan?.Cleanup();
+            _sdkScan = null;
+            _selectedPath = null;
+            _selectedPeInfo = null;
+
+            ComponentManagementService.FsrSdkScanResult scan;
+            try
+            {
+                scan = await _componentService.ScanFsrSdkSourceAsync(path);
+            }
+            catch (Exception ex)
+            {
+                ShowError($"Could not read the selected source: {ex.Message}");
+                return;
+            }
+
+            if (!scan.HasUpscaler)
+            {
+                scan.Cleanup();
+                ShowError($"No 64-bit {ComponentManagementService.CustomFsrSdkDllName} was found in the selected source. " +
+                          "The upscaler DLL is required — make sure you picked the right folder or archive.");
+                return;
+            }
+
+            // Rename note for a single DLL whose name didn't match the upscaler
+            if (File.Exists(path) && path.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+            {
+                var fileName = Path.GetFileName(path);
+                if (!fileName.Equals(ComponentManagementService.CustomFsrSdkDllName, StringComparison.OrdinalIgnoreCase) &&
+                    !Array.Exists(ComponentManagementService.FsrSdkDllNames, n => n.Equals(fileName, StringComparison.OrdinalIgnoreCase)))
+                {
+                    if (pnlRename != null) pnlRename.IsVisible = true;
+                    var txtRename = this.FindControl<TextBlock>("TxtRenameWarning");
+                    if (txtRename != null)
+                        txtRename.Text = $"The selected file is named '{fileName}'. It will be imported as " +
+                                         $"{ComponentManagementService.CustomFsrSdkDllName} — make sure this really is the FSR SDK upscaler.";
+                }
+            }
+
+            var pe = scan.UpscalerPe!;
+            var txtFileVer = this.FindControl<TextBlock>("TxtFileVersion");
+            var txtProdVer = this.FindControl<TextBlock>("TxtProductVersion");
+            var txtSig = this.FindControl<TextBlock>("TxtSignature");
+            var txtSha = this.FindControl<TextBlock>("TxtSha256");
+            var txtHint = this.FindControl<TextBlock>("TxtModelHint");
+            var txtIncluded = this.FindControl<TextBlock>("TxtIncludedFiles");
+
+            if (txtFileVer != null) txtFileVer.Text = pe.FileVersion ?? "unknown (no version resource)";
+            if (txtProdVer != null) txtProdVer.Text = pe.ProductVersion ?? "unknown";
+            if (txtSig != null)
+                txtSig.Text = pe.HasAuthenticodeSignature
+                    ? "Signed (Authenticode signature present — not validated)"
+                    : "Unsigned (no Authenticode signature found)";
+
+            string sha256 = "";
+            try
+            {
+                var upscalerPath = scan.FoundFiles[ComponentManagementService.CustomFsrSdkDllName];
+                sha256 = await Task.Run(() =>
+                {
+                    using var sha = System.Security.Cryptography.SHA256.Create();
+                    using var stream = File.OpenRead(upscalerPath);
+                    return Convert.ToHexString(sha.ComputeHash(stream));
+                });
+            }
+            catch (Exception ex)
+            {
+                DebugWindow.Log($"[CustomFsrSdk] SHA-256 failed: {ex.Message}");
+            }
+            if (txtSha != null) txtSha.Text = string.IsNullOrEmpty(sha256) ? "unavailable" : sha256;
+
+            if (txtIncluded != null)
+            {
+                txtIncluded.Text = $"DLLs found ({scan.FoundFiles.Count}): " + string.Join(", ", scan.FoundFiles.Keys);
+                txtIncluded.IsVisible = true;
+            }
+
+            if (txtHint != null)
+            {
+                if (Version.TryParse(pe.FileVersion ?? "", out var v))
+                {
+                    txtHint.Text = v >= new Version(4, 1, 1, 0)
+                        ? "Upscaler file version 4.1.1.0 or newer — OptiScaler will treat this SDK as FSR 4.1.x (INT8-capable)."
+                        : "Upscaler file version below 4.1.1.0 — OptiScaler will treat this as an older FSR 4.0.x-era SDK.";
+                }
+                else
+                {
+                    txtHint.Text = "Upscaler version could not be detected; OptiScaler decides INT8 support from it at runtime.";
+                }
+            }
+
+            if (pnlInfo != null) pnlInfo.IsVisible = true;
+
+            _sdkScan = scan;
+            _selectedPath = path;
+            if (btnImport != null) btnImport.IsEnabled = true;
         }
 
         private async Task InspectSelectionAsync(string path)
@@ -261,7 +419,10 @@ namespace OptiscalerClient.Views
 
         private async void BtnImport_Click(object? sender, RoutedEventArgs e)
         {
-            if (string.IsNullOrEmpty(_selectedPath) || _selectedPeInfo == null)
+            bool ready = _kind == CustomDllKind.FsrSdkDll
+                ? _sdkScan is { HasUpscaler: true }
+                : !string.IsNullOrEmpty(_selectedPath) && _selectedPeInfo != null;
+            if (!ready)
                 return;
 
             var btnImport = this.FindControl<Button>("BtnImport");
@@ -270,8 +431,10 @@ namespace OptiscalerClient.Views
             try
             {
                 ImportedInfo = _kind == CustomDllKind.FsrSdkDll
-                    ? await _componentService.ImportCustomFsrSdkDllAsync(_selectedPath)
-                    : await _componentService.ImportCustomFsr4DllAsync(_selectedPath);
+                    ? await _componentService.ImportCustomFsrSdkPackageAsync(_sdkScan!)
+                    : await _componentService.ImportCustomFsr4DllAsync(_selectedPath!);
+                _sdkScan?.Cleanup();
+                _sdkScan = null;
                 _ = CloseAnimated();
             }
             catch (Exception ex)
@@ -284,6 +447,8 @@ namespace OptiscalerClient.Views
         private void BtnCancel_Click(object? sender, RoutedEventArgs e)
         {
             ImportedInfo = null;
+            _sdkScan?.Cleanup();
+            _sdkScan = null;
             _ = CloseAnimated();
         }
 

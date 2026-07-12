@@ -543,7 +543,8 @@ namespace OptiscalerClient.Views
             if (info != null && card.Child is Grid grid && grid.Children.Count > 0 && grid.Children[0] is StackPanel stack)
             {
                 var secondary = this.FindResource("BrTextSecondary") as IBrush ?? Brushes.Gray;
-                var details = $"{(info.HasAuthenticodeSignature ? "Signed" : "Unsigned")}" +
+                var details = (info.Files.Count > 1 ? $"{info.Files.Count} DLLs ({string.Join(", ", info.Files.Select(f => f.Name.Replace("amd_fidelityfx_", "").Replace(".dll", "")))}) · " : "") +
+                              $"{(info.HasAuthenticodeSignature ? "Signed" : "Unsigned")}" +
                               (string.IsNullOrEmpty(info.Sha256) ? "" : $" · SHA-256 {info.Sha256[..12]}…") +
                               (string.IsNullOrEmpty(info.OriginalFileName) ? "" : $" · from {info.OriginalFileName}");
                 stack.Children.Add(new TextBlock

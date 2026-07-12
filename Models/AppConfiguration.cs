@@ -266,10 +266,22 @@ namespace OptiscalerClient.Models
     }
 
     /// <summary>
-    /// Metadata for a user-imported custom FSR 4.x amdxcffx64.dll.
-    /// Stored as dll_info.json next to the DLL in its cache folder.
-    /// The DLL itself is never downloaded or bundled by this app — the user
-    /// must supply a file they already possess ("bring your own DLL").
+    /// Metadata for one DLL inside a user-imported custom FSR package.
+    /// </summary>
+    public class CustomDllFileEntry
+    {
+        public string Name { get; set; } = string.Empty;
+        public string? FileVersion { get; set; }
+        public string? Sha256 { get; set; }
+        public bool HasAuthenticodeSignature { get; set; }
+    }
+
+    /// <summary>
+    /// Metadata for a user-imported custom FSR DLL or DLL package
+    /// (amdxcffx64.dll, or an FSR SDK set anchored by amd_fidelityfx_upscaler_dx12.dll).
+    /// Stored as dll_info.json next to the DLL(s) in the cache folder.
+    /// The DLLs are never downloaded or bundled by this app — the user
+    /// must supply files they already possess ("bring your own DLL").
     /// </summary>
     public class CustomFsr4DllInfo
     {
@@ -287,5 +299,10 @@ namespace OptiscalerClient.Models
         public string? OriginalFileName { get; set; }
         /// <summary>UTC timestamp of the import.</summary>
         public string? ImportedAtUtc { get; set; }
+        /// <summary>
+        /// All DLLs contained in this package (SDK imports may bundle the upscaler,
+        /// frame generation, and companion DLLs). Empty for legacy single-file imports.
+        /// </summary>
+        public List<CustomDllFileEntry> Files { get; set; } = new();
     }
 }

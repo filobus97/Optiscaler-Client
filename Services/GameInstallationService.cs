@@ -1753,29 +1753,43 @@ namespace OptiscalerClient.Services
         /// is required so uninstall can restore/delete the DLL).
         /// </summary>
         public void InstallCustomFsr4Dll(Game game, string cachedDllPath, string versionLabel, string? overrideGameDir = null)
-            => InstallUserDll(game, cachedDllPath, versionLabel, overrideGameDir, isSdk: false);
+            => InstallUserDllSet(game, new List<(string, string)> { ("amdxcffx64.dll", cachedDllPath) },
+                versionLabel, overrideGameDir, isSdk: false);
 
         /// <summary>
-        /// Installs a user-imported custom FSR SDK DLL (amd_fidelityfx_upscaler_dx12.dll)
-        /// into the game, replacing the copy shipped with the installed OptiScaler
-        /// release. Same backup/manifest/ini handling as the amdxcffx64.dll component.
-        /// Mutually exclusive with the downloadable "FSR4 INT8 Extras" component,
-        /// which installs the same file (enforced in the UI).
+        /// Installs a user-imported custom FSR SDK package (amd_fidelityfx_upscaler_dx12.dll
+        /// plus any companion DLLs imported with it, e.g. frame generation) into the game,
+        /// replacing the copies shipped with the installed OptiScaler release. Same
+        /// backup/manifest/ini handling as the amdxcffx64.dll component. Mutually
+        /// exclusive with the downloadable "FSR4 INT8 Extras" component, which installs
+        /// the same upscaler file (enforced in the UI).
         /// </summary>
-        public void InstallCustomFsrSdkDll(Game game, string cachedDllPath, string versionLabel, string? overrideGameDir = null)
-            => InstallUserDll(game, cachedDllPath, versionLabel, overrideGameDir, isSdk: true);
+        public void InstallCustomFsrSdk(Game game, string cacheDir, string versionLabel, string? overrideGameDir = null)
+        {
+            if (!Directory.Exists(cacheDir))
+                throw new DirectoryNotFoundException($"The imported FSR SDK package was not found in the local cache: {cacheDir}");
+
+            // Install every DLL of the imported package (upscaler + companions).
+            var files = Directory.GetFiles(cacheDir, "*.dll", SearchOption.TopDirectoryOnly)
+                .Select(f => (name: Path.GetFileName(f), path: f))
+                .ToList();
+            if (files.Count == 0 || !files.Any(f => f.name.Equals("amd_fidelityfx_upscaler_dx12.dll", StringComparison.OrdinalIgnoreCase)))
+                throw new FileNotFoundException("The imported FSR SDK package is missing amd_fidelityfx_upscaler_dx12.dll.");
+
+            InstallUserDllSet(game, files, versionLabel, overrideGameDir, isSdk: true);
+        }
 
         /// <summary>
         /// Shared install core for the two bring-your-own-DLL components.
-        /// isSdk selects amd_fidelityfx_upscaler_dx12.dll (FSR SDK) vs amdxcffx64.dll.
+        /// isSdk selects the FSR SDK package (one or more DLLs) vs amdxcffx64.dll.
         /// </summary>
-        private void InstallUserDll(Game game, string cachedDllPath, string versionLabel, string? overrideGameDir, bool isSdk)
+        private void InstallUserDllSet(Game game, List<(string name, string path)> files, string versionLabel, string? overrideGameDir, bool isSdk)
         {
-            string dllName = isSdk ? "amd_fidelityfx_upscaler_dx12.dll" : "amdxcffx64.dll";
             string logTag = isSdk ? "CustomFsrSdk" : "CustomFsr4";
 
-            if (!File.Exists(cachedDllPath))
-                throw new FileNotFoundException($"The imported {dllName} was not found in the local cache.", cachedDllPath);
+            foreach (var (name, path) in files)
+                if (!File.Exists(path))
+                    throw new FileNotFoundException($"The imported {name} was not found in the local cache.", path);
 
             var storeKey = game.InstallPath;
             var manifest = _backupStore.LoadManifest(storeKey);
@@ -1788,53 +1802,57 @@ namespace OptiscalerClient.Services
                     : DetermineInstallDirectory(game));
 
             if (string.IsNullOrEmpty(gameDir) || !Directory.Exists(gameDir))
-                throw new Exception($"Could not determine the game directory for the custom {dllName}.");
+                throw new Exception("Could not determine the game directory for the custom DLL install.");
 
-            DebugWindow.Log($"[{logTag}] Installing v{versionLabel} into {gameDir}");
+            DebugWindow.Log($"[{logTag}] Installing v{versionLabel} ({files.Count} file(s)) into {gameDir}");
 
             // Mirror the backup rules of the main install: never re-backup a file that is
             // already protected by an original backup, and never treat a file we installed
             // ourselves as a game original. The per-game version field covers OptiScaler
             // updates, where the manifest is rebuilt and loses this component's records
-            // while the DLL we placed earlier is still on disk. For the SDK DLL, an
-            // installed FSR4 INT8 Extras version also means the current file is not a
+            // while the DLLs we placed earlier are still on disk. For the SDK set, an
+            // installed FSR4 INT8 Extras version also means the upscaler file is not a
             // game original (Extras installs the same file).
             var previouslyOurs = isSdk
                 ? !string.IsNullOrEmpty(game.CustomFsrSdkVersion) || !string.IsNullOrEmpty(game.Fsr4ExtraVersion)
                 : !string.IsNullOrEmpty(game.CustomFsr4DllVersion);
-            var priorBackedUp = manifest.FilesOverwritten.Any(r => r.RelativePath.Equals(dllName, StringComparison.OrdinalIgnoreCase))
-                             || manifest.BackedUpFiles.Contains(dllName, StringComparer.OrdinalIgnoreCase);
-            var priorCreated = manifest.FilesCreated.Any(r => r.RelativePath.Equals(dllName, StringComparison.OrdinalIgnoreCase))
-                            || previouslyOurs;
-            var backupInStore = File.Exists(Path.Combine(_backupStore.GetFilesDir(storeKey), dllName));
 
-            var destPath = Path.Combine(gameDir, dllName);
-            var existedBefore = File.Exists(destPath);
-            string? preHash = null;
-
-            if (existedBefore && !priorBackedUp && !priorCreated)
+            foreach (var (dllName, sourcePath) in files)
             {
-                preHash = ComputeSha256(destPath);
-                _backupStore.BackupFile(storeKey, gameDir, dllName);
-                manifest.BackedUpFiles.Add(dllName);
-                DebugWindow.Log($"[{logTag}] Backed up existing {dllName}");
+                var priorBackedUp = manifest.FilesOverwritten.Any(r => r.RelativePath.Equals(dllName, StringComparison.OrdinalIgnoreCase))
+                                 || manifest.BackedUpFiles.Contains(dllName, StringComparer.OrdinalIgnoreCase);
+                var priorCreated = manifest.FilesCreated.Any(r => r.RelativePath.Equals(dllName, StringComparison.OrdinalIgnoreCase))
+                                || previouslyOurs;
+                var backupInStore = File.Exists(Path.Combine(_backupStore.GetFilesDir(storeKey), dllName));
+
+                var destPath = Path.Combine(gameDir, dllName);
+                var existedBefore = File.Exists(destPath);
+                string? preHash = null;
+
+                if (existedBefore && !priorBackedUp && !priorCreated)
+                {
+                    preHash = ComputeSha256(destPath);
+                    _backupStore.BackupFile(storeKey, gameDir, dllName);
+                    manifest.BackedUpFiles.Add(dllName);
+                    DebugWindow.Log($"[{logTag}] Backed up existing {dllName}");
+                }
+
+                // An original backup surviving in the store (from a previous install cycle)
+                // must keep its "overwritten" record so uninstall restores it.
+                var treatAsOriginal = (existedBefore && !priorCreated) || priorBackedUp || (priorCreated && backupInStore);
+                if (treatAsOriginal && !manifest.BackedUpFiles.Contains(dllName, StringComparer.OrdinalIgnoreCase) && backupInStore)
+                    manifest.BackedUpFiles.Add(dllName);
+
+                File.Copy(sourcePath, destPath, overwrite: true);
+                if (!manifest.InstalledFiles.Contains(dllName, StringComparer.OrdinalIgnoreCase))
+                    manifest.InstalledFiles.Add(dllName);
+                TrackManifestFileMutation(
+                    manifest,
+                    relativePath: dllName,
+                    existedBefore: treatAsOriginal,
+                    preInstallHash: preHash,
+                    postInstallHash: ComputeSha256(destPath));
             }
-
-            // An original backup surviving in the store (from a previous install cycle)
-            // must keep its "overwritten" record so uninstall restores it.
-            var treatAsOriginal = (existedBefore && !priorCreated) || priorBackedUp || (priorCreated && backupInStore);
-            if (treatAsOriginal && !manifest.BackedUpFiles.Contains(dllName, StringComparer.OrdinalIgnoreCase) && backupInStore)
-                manifest.BackedUpFiles.Add(dllName);
-
-            File.Copy(cachedDllPath, destPath, overwrite: true);
-            if (!manifest.InstalledFiles.Contains(dllName, StringComparer.OrdinalIgnoreCase))
-                manifest.InstalledFiles.Add(dllName);
-            TrackManifestFileMutation(
-                manifest,
-                relativePath: dllName,
-                existedBefore: treatAsOriginal,
-                preInstallHash: preHash,
-                postInstallHash: ComputeSha256(destPath));
 
             // Engage FSR4 on non-RDNA4 GPUs:
             //  - UpscalerIndex=0 selects the FSR 4.x backend on current OptiScaler builds
@@ -1853,8 +1871,9 @@ namespace OptiscalerClient.Services
                 manifest.IncludesCustomFsr4Dll = true;
                 manifest.CustomFsr4DllVersion = versionLabel;
             }
-            if (!manifest.ExpectedFinalMarkers.Contains(dllName, StringComparer.OrdinalIgnoreCase))
-                manifest.ExpectedFinalMarkers.Add(dllName);
+            foreach (var (dllName, _) in files)
+                if (!manifest.ExpectedFinalMarkers.Contains(dllName, StringComparer.OrdinalIgnoreCase))
+                    manifest.ExpectedFinalMarkers.Add(dllName);
             _backupStore.SaveManifest(storeKey, manifest);
 
             if (isSdk)
@@ -1889,7 +1908,6 @@ namespace OptiscalerClient.Services
 
         private void UninstallUserDll(Game game, bool isSdk)
         {
-            string dllName = isSdk ? "amd_fidelityfx_upscaler_dx12.dll" : "amdxcffx64.dll";
             string logTag = isSdk ? "CustomFsrSdk" : "CustomFsr4";
 
             var storeKey = game.InstallPath;
@@ -1902,35 +1920,90 @@ namespace OptiscalerClient.Services
             if (string.IsNullOrEmpty(gameDir) || !Directory.Exists(gameDir))
                 throw new Exception("Could not determine the game directory.");
 
-            var destPath = Path.Combine(gameDir, dllName);
-
-            var overwrittenRecord = manifest?.FilesOverwritten.FirstOrDefault(
-                r => r.RelativePath.Equals(dllName, StringComparison.OrdinalIgnoreCase));
-            // The manifest can lose this component's records across OptiScaler updates,
-            // but the original backup file survives in the store — prefer restoring it.
-            var backupInStore = File.Exists(Path.Combine(_backupStore.GetFilesDir(storeKey), dllName));
-
-            // When removing the custom SDK while the FSR4 INT8 extras are installed,
-            // the file on disk now belongs to the extras component — leave it alone
-            // and only clear this component's tracking.
-            var fileOwnedByExtras = isSdk && !string.IsNullOrEmpty(game.Fsr4ExtraVersion);
-
-            if (fileOwnedByExtras)
+            // Which files did this component install? For the SDK, prefer the imported
+            // package's file list from the cache metadata; fall back to the full known
+            // set when the cache entry is gone. amdxcffx64 is always a single file.
+            List<string> dllNames;
+            if (!isSdk)
             {
-                DebugWindow.Log($"[{logTag}] {dllName} is now owned by the FSR4 INT8 extras — leaving file in place.");
+                dllNames = new List<string> { "amdxcffx64.dll" };
             }
-            else if (overwrittenRecord != null || backupInStore)
+            else
             {
-                // The game had its own copy of this DLL — restore it.
-                if (!_backupStore.RestoreFile(storeKey, gameDir, dllName, overwrittenRecord?.BackupRelativePath))
-                    DebugWindow.Log($"[{logTag}] Backup for {dllName} not found; leaving current file in place.");
-                else
-                    DebugWindow.Log($"[{logTag}] Restored original {dllName} from backup.");
+                var componentService = new ComponentManagementService();
+                var pkgInfo = !string.IsNullOrEmpty(game.CustomFsrSdkVersion)
+                    ? componentService.GetCustomFsrSdkDllInfo(game.CustomFsrSdkVersion)
+                    : null;
+                dllNames = pkgInfo != null && pkgInfo.Files.Count > 0
+                    ? pkgInfo.Files.Select(f => f.Name).ToList()
+                    : ComponentManagementService.FsrSdkDllNames.ToList();
             }
-            else if (File.Exists(destPath))
+
+            // The pristine OptiScaler package for the installed version — used to put
+            // back the SDK DLLs OptiScaler itself shipped after we overwrote them.
+            string? optiCacheDir = null;
+            if (isSdk && !string.IsNullOrEmpty(manifest?.OptiscalerVersion))
             {
-                File.Delete(destPath);
-                DebugWindow.Log($"[{logTag}] Deleted {dllName} (no pre-existing file to restore).");
+                var candidate = new ComponentManagementService().GetOptiScalerCachePath(manifest.OptiscalerVersion);
+                if (Directory.Exists(candidate)) optiCacheDir = candidate;
+            }
+
+            foreach (var dllName in dllNames)
+            {
+                var destPath = Path.Combine(gameDir, dllName);
+
+                var overwrittenRecord = manifest?.FilesOverwritten.FirstOrDefault(
+                    r => r.RelativePath.Equals(dllName, StringComparison.OrdinalIgnoreCase));
+                // The manifest can lose this component's records across OptiScaler updates,
+                // but the original backup file survives in the store — prefer restoring it.
+                var backupInStore = File.Exists(Path.Combine(_backupStore.GetFilesDir(storeKey), dllName));
+
+                // When removing the custom SDK while the FSR4 INT8 extras are installed,
+                // the upscaler file on disk now belongs to the extras component — leave
+                // it alone and only clear this component's tracking.
+                var fileOwnedByExtras = isSdk && !string.IsNullOrEmpty(game.Fsr4ExtraVersion)
+                    && dllName.Equals("amd_fidelityfx_upscaler_dx12.dll", StringComparison.OrdinalIgnoreCase);
+
+                // The pristine copy shipped inside the installed OptiScaler package, if any
+                var optiOriginal = optiCacheDir != null
+                    ? Directory.GetFiles(optiCacheDir, dllName, SearchOption.AllDirectories).FirstOrDefault()
+                    : null;
+
+                if (fileOwnedByExtras)
+                {
+                    DebugWindow.Log($"[{logTag}] {dllName} is now owned by the FSR4 INT8 extras — leaving file in place.");
+                    continue;
+                }
+
+                if (overwrittenRecord != null || backupInStore)
+                {
+                    // The game had its own copy of this DLL — restore it.
+                    if (!_backupStore.RestoreFile(storeKey, gameDir, dllName, overwrittenRecord?.BackupRelativePath))
+                        DebugWindow.Log($"[{logTag}] Backup for {dllName} not found; leaving current file in place.");
+                    else
+                        DebugWindow.Log($"[{logTag}] Restored original {dllName} from backup.");
+                }
+                else if (optiOriginal != null && File.Exists(destPath))
+                {
+                    // No game original, but the installed OptiScaler release shipped this
+                    // DLL — put the pristine bundled copy back so OptiScaler keeps working.
+                    File.Copy(optiOriginal, destPath, overwrite: true);
+                    DebugWindow.Log($"[{logTag}] Restored OptiScaler's bundled {dllName} from the release cache.");
+                    continue; // file legitimately stays: keep its manifest records
+                }
+                else if (File.Exists(destPath))
+                {
+                    File.Delete(destPath);
+                    DebugWindow.Log($"[{logTag}] Deleted {dllName} (no pre-existing file to restore).");
+                }
+
+                if (manifest != null)
+                {
+                    manifest.InstalledFiles.RemoveAll(f => f.Equals(dllName, StringComparison.OrdinalIgnoreCase));
+                    manifest.FilesCreated.RemoveAll(r => r.RelativePath.Equals(dllName, StringComparison.OrdinalIgnoreCase));
+                    manifest.FilesOverwritten.RemoveAll(r => r.RelativePath.Equals(dllName, StringComparison.OrdinalIgnoreCase));
+                    manifest.ExpectedFinalMarkers.RemoveAll(f => f.Equals(dllName, StringComparison.OrdinalIgnoreCase));
+                }
             }
 
             if (isSdk) game.CustomFsrSdkVersion = null;
@@ -1958,10 +2031,6 @@ namespace OptiscalerClient.Services
                     manifest.IncludesCustomFsr4Dll = false;
                     manifest.CustomFsr4DllVersion = null;
                 }
-                manifest.InstalledFiles.RemoveAll(f => f.Equals(dllName, StringComparison.OrdinalIgnoreCase));
-                manifest.FilesCreated.RemoveAll(r => r.RelativePath.Equals(dllName, StringComparison.OrdinalIgnoreCase));
-                manifest.FilesOverwritten.RemoveAll(r => r.RelativePath.Equals(dllName, StringComparison.OrdinalIgnoreCase));
-                manifest.ExpectedFinalMarkers.RemoveAll(f => f.Equals(dllName, StringComparison.OrdinalIgnoreCase));
                 _backupStore.SaveManifest(storeKey, manifest);
             }
         }
