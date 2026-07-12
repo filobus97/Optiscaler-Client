@@ -2476,19 +2476,238 @@ namespace OptiscalerClient.Services
         public CustomFsr4DllInfo? GetCustomFsrSdkDllInfo(string version)
             => ReadUserDllInfo(GetCustomFsrSdkCachePath(version), "CustomFsrSdk");
 
-        /// <summary>
-        /// Imports a user-supplied amd_fidelityfx_upscaler_dx12.dll (FSR SDK) into the
-        /// local component cache under Cache/CustomFsrSdk/{version}/.
-        /// </summary>
-        public Task<CustomFsr4DllInfo> ImportCustomFsrSdkDllAsync(string sourcePath)
-            => ImportUserDllAsync(sourcePath, CustomFsrSdkDllName, GetCustomFsrSdkCachePath, "CustomFsrSdk");
-
         /// <summary>Deletes an imported custom FSR SDK DLL version from the cache.</summary>
         public void DeleteCustomFsrSdkCache(string version)
         {
             var cachePath = GetCustomFsrSdkCachePath(version);
             if (Directory.Exists(cachePath))
                 Directory.Delete(cachePath, true);
+        }
+
+        /// <summary>
+        /// The FSR SDK DLLs an SDK package import looks for. The upscaler is the
+        /// required anchor (it provides the version label); the rest are optional
+        /// companions imported when present so a full FSR release can be swapped in.
+        /// Matches the DLL names OptiScaler can load/override via [Libraries].
+        /// </summary>
+        public static readonly string[] FsrSdkDllNames =
+        {
+            "amd_fidelityfx_upscaler_dx12.dll",
+            "amd_fidelityfx_framegeneration_dx12.dll",
+            "amd_fidelityfx_dx12.dll",
+            "amd_fidelityfx_loader_dx12.dll",
+            "amd_fidelityfx_denoiser_dx12.dll",
+            "amd_fidelityfx_radiancecache_dx12.dll",
+            "amd_fidelityfx_vk.dll",
+        };
+
+        /// <summary>
+        /// Result of scanning a user-selected FSR SDK source (folder, archive, or
+        /// single DLL). FoundFiles maps DLL name → readable path on disk; for
+        /// archives the paths point into StagingDir, which the caller must delete
+        /// (via Cleanup) once the import is finished or abandoned.
+        /// </summary>
+        public class FsrSdkScanResult
+        {
+            public string SourcePath { get; init; } = string.Empty;
+            public string? StagingDir { get; set; }
+            public Dictionary<string, string> FoundFiles { get; } = new(StringComparer.OrdinalIgnoreCase);
+            public PeFileInfo? UpscalerPe { get; set; }
+            public bool HasUpscaler => FoundFiles.ContainsKey(CustomFsrSdkDllName);
+
+            public void Cleanup()
+            {
+                if (string.IsNullOrEmpty(StagingDir)) return;
+                try { if (Directory.Exists(StagingDir)) Directory.Delete(StagingDir, true); }
+                catch { /* best effort */ }
+            }
+        }
+
+        /// <summary>
+        /// Scans a user-selected source for FSR SDK DLLs. Accepts:
+        ///  - an extracted SDK folder (searched recursively),
+        ///  - a .zip/.7z/.rar archive (matching entries are staged to a temp dir),
+        ///  - a single .dll file (treated as the upscaler, renamed on import if needed).
+        /// Only 64-bit PE files are accepted; when the same DLL appears in several
+        /// subfolders, paths containing "signed" win, then the shallowest path.
+        /// </summary>
+        public async Task<FsrSdkScanResult> ScanFsrSdkSourceAsync(string sourcePath)
+        {
+            return await Task.Run(() =>
+            {
+                var result = new FsrSdkScanResult { SourcePath = sourcePath };
+
+                if (File.Exists(sourcePath) && sourcePath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                {
+                    var pe = PeFileInspector.Inspect(sourcePath);
+                    if (!pe.IsValidPe)
+                        throw new InvalidDataException("The selected file is not a valid Windows DLL (missing PE header).");
+                    if (!pe.Is64Bit)
+                        throw new InvalidDataException("The selected DLL is not a 64-bit (x64) binary.");
+
+                    var name = Path.GetFileName(sourcePath);
+                    var known = FsrSdkDllNames.FirstOrDefault(n => n.Equals(name, StringComparison.OrdinalIgnoreCase));
+                    // Unknown filenames are imported as the upscaler (rename-on-import)
+                    result.FoundFiles[known ?? CustomFsrSdkDllName] = sourcePath;
+                }
+                else if (Directory.Exists(sourcePath))
+                {
+                    CollectSdkDllsFromDirectory(sourcePath, result);
+                }
+                else if (File.Exists(sourcePath))
+                {
+                    // Archive: stage only entries whose filename matches the known set.
+                    var staging = Path.Combine(Path.GetTempPath(), "OptiScaler_SdkImport_" + Guid.NewGuid().ToString("N"));
+                    Directory.CreateDirectory(staging);
+                    result.StagingDir = staging;
+
+                    using (var archive = ArchiveFactory.Open(sourcePath))
+                    {
+                        foreach (var entry in archive.Entries.Where(e => !e.IsDirectory))
+                        {
+                            var entryName = Path.GetFileName(entry.Key ?? "");
+                            if (!FsrSdkDllNames.Contains(entryName, StringComparer.OrdinalIgnoreCase)) continue;
+
+                            // Preserve the entry's relative path (flattened safely) so
+                            // duplicate names from different subfolders can be ranked.
+                            var relative = (entry.Key ?? entryName).Replace('/', '_').Replace('\\', '_');
+                            foreach (var c in Path.GetInvalidFileNameChars())
+                                relative = relative.Replace(c, '_');
+                            var dest = Path.Combine(staging, relative);
+                            using var entryStream = entry.OpenEntryStream();
+                            using var outStream = File.Create(dest);
+                            entryStream.CopyTo(outStream, 81920);
+                        }
+                    }
+
+                    // Rank staged copies exactly like directory scanning, using the
+                    // original entry paths encoded in the flattened filenames.
+                    CollectSdkDllsFromDirectory(staging, result);
+                    if (result.FoundFiles.Count == 0)
+                        DebugWindow.Log("[CustomFsrSdk] Archive contained no known FSR SDK DLLs.");
+                }
+                else
+                {
+                    throw new FileNotFoundException("Selected path does not exist.", sourcePath);
+                }
+
+                if (result.FoundFiles.TryGetValue(CustomFsrSdkDllName, out var upscalerPath))
+                    result.UpscalerPe = PeFileInspector.Inspect(upscalerPath);
+
+                DebugWindow.Log($"[CustomFsrSdk] Scan of '{sourcePath}' found: {string.Join(", ", result.FoundFiles.Keys)}");
+                return result;
+            });
+        }
+
+        /// <summary>
+        /// Finds the best candidate for each known SDK DLL inside a directory tree.
+        /// Prefers 64-bit PEs whose path mentions "signed", then the shallowest path.
+        /// </summary>
+        private static void CollectSdkDllsFromDirectory(string root, FsrSdkScanResult result)
+        {
+            foreach (var dllName in FsrSdkDllNames)
+            {
+                var candidates = Directory.GetFiles(root, "*.dll", SearchOption.AllDirectories)
+                    .Where(f =>
+                    {
+                        var fn = Path.GetFileName(f);
+                        // Exact name, or a staged archive entry whose flattened name ends with it
+                        return fn.Equals(dllName, StringComparison.OrdinalIgnoreCase)
+                            || (fn.EndsWith("_" + dllName, StringComparison.OrdinalIgnoreCase));
+                    })
+                    .Where(f =>
+                    {
+                        try
+                        {
+                            var pe = PeFileInspector.Inspect(f);
+                            return pe.IsValidPe && pe.Is64Bit;
+                        }
+                        catch { return false; }
+                    })
+                    .OrderByDescending(f => f.Contains("signed", StringComparison.OrdinalIgnoreCase))
+                    .ThenBy(f => f.Count(c => c == Path.DirectorySeparatorChar || c == '_'))
+                    .ToList();
+
+                if (candidates.Count > 0 && !result.FoundFiles.ContainsKey(dllName))
+                {
+                    result.FoundFiles[dllName] = candidates[0];
+                    if (candidates.Count > 1)
+                        DebugWindow.Log($"[CustomFsrSdk] Multiple copies of {dllName} found ({candidates.Count}); using '{candidates[0]}'.");
+                }
+            }
+        }
+
+        /// <summary>
+        /// Imports a scanned FSR SDK package into Cache/CustomFsrSdk/{version}/.
+        /// The upscaler DLL is required; all other found DLLs are imported alongside
+        /// it. The version label comes from the upscaler's FileVersion. The caller
+        /// owns the scan's staging cleanup.
+        /// </summary>
+        public async Task<CustomFsr4DllInfo> ImportCustomFsrSdkPackageAsync(FsrSdkScanResult scan)
+        {
+            if (!scan.HasUpscaler)
+                throw new InvalidDataException(
+                    $"The selected source does not contain {CustomFsrSdkDllName} (64-bit). The upscaler DLL is required.");
+
+            return await Task.Run(() =>
+            {
+                var upscalerPath = scan.FoundFiles[CustomFsrSdkDllName];
+                var upscalerPe = scan.UpscalerPe ?? PeFileInspector.Inspect(upscalerPath);
+
+                string upscalerSha;
+                using (var sha = System.Security.Cryptography.SHA256.Create())
+                using (var stream = File.OpenRead(upscalerPath))
+                    upscalerSha = Convert.ToHexString(sha.ComputeHash(stream));
+
+                var versionLabel = !string.IsNullOrEmpty(upscalerPe.FileVersion) && upscalerPe.FileVersion != "0.0.0.0"
+                    ? upscalerPe.FileVersion
+                    : $"unknown-{upscalerSha[..8].ToLowerInvariant()}";
+                versionLabel = SanitizeVersionName(versionLabel);
+
+                var targetDir = GetCustomFsrSdkCachePath(versionLabel);
+                if (Directory.Exists(targetDir))
+                    Directory.Delete(targetDir, true); // re-import replaces the whole package
+                Directory.CreateDirectory(targetDir);
+
+                var info = new CustomFsr4DllInfo
+                {
+                    VersionLabel = versionLabel,
+                    FileVersion = upscalerPe.FileVersion,
+                    ProductVersion = upscalerPe.ProductVersion,
+                    Sha256 = upscalerSha,
+                    HasAuthenticodeSignature = upscalerPe.HasAuthenticodeSignature,
+                    OriginalFileName = Path.GetFileName(scan.SourcePath),
+                    ImportedAtUtc = DateTime.UtcNow.ToString("O")
+                };
+
+                foreach (var (dllName, sourceFile) in scan.FoundFiles)
+                {
+                    File.Copy(sourceFile, Path.Combine(targetDir, dllName), overwrite: true);
+
+                    var pe = dllName.Equals(CustomFsrSdkDllName, StringComparison.OrdinalIgnoreCase)
+                        ? upscalerPe
+                        : PeFileInspector.Inspect(sourceFile);
+                    string fileSha;
+                    using (var sha = System.Security.Cryptography.SHA256.Create())
+                    using (var stream = File.OpenRead(sourceFile))
+                        fileSha = Convert.ToHexString(sha.ComputeHash(stream));
+
+                    info.Files.Add(new CustomDllFileEntry
+                    {
+                        Name = dllName,
+                        FileVersion = pe.FileVersion,
+                        Sha256 = fileSha,
+                        HasAuthenticodeSignature = pe.HasAuthenticodeSignature
+                    });
+                }
+
+                var json = JsonSerializer.Serialize(info, OptimizerContext.Default.CustomFsr4DllInfo);
+                File.WriteAllText(Path.Combine(targetDir, "dll_info.json"), json);
+
+                DebugWindow.Log($"[CustomFsrSdk] Imported package '{versionLabel}' with {info.Files.Count} DLL(s): " +
+                                string.Join(", ", info.Files.Select(f => f.Name)));
+                return info;
+            });
         }
 
         // ── Shared bring-your-own-DLL helpers ─────────────────────────────────────

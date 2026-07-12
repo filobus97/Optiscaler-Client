@@ -461,7 +461,7 @@
                                                 BorderThickness="1" CornerRadius="8"
                                                 Width="16" Height="16"
                                                 ToolTip.ShowDelay="100" Cursor="Help"
-                                                ToolTip.Tip="Installs a user-imported amd_fidelityfx_upscaler_dx12.dll (FSR SDK), replacing the one bundled with the selected OptiScaler release — useful for running a newer FSR 4 SDK without waiting for an OptiScaler update. Import your DLL under Settings → Manage Cache → FSR4 Custom SDK. Mutually exclusive with the FSR4 INT8 selector (both install the same file). This tool does not provide the DLL.">
+                                                ToolTip.Tip="Installs a user-imported FSR SDK package (upscaler + frame generation + companion DLLs), replacing the copies bundled with the selected OptiScaler release — run a newer FSR 4 SDK without waiting for an OptiScaler update. Import from an extracted SDK folder or archive under Settings → Manage Cache → FSR4 Custom SDK. Mutually exclusive with the FSR4 INT8 selector (same upscaler file). This tool does not provide the DLLs.">
                                             <TextBlock Text="?" Foreground="{StaticResource BrTextSecondary}"
                                                        FontSize="10" FontWeight="Bold"
                                                        HorizontalAlignment="Center" VerticalAlignment="Center"

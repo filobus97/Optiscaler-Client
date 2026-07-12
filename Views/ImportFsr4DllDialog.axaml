@@ -87,8 +87,8 @@
                                            Foreground="{StaticResource BrTextPrimary}"
                                            LineHeight="20"/>
 
-                                <!-- File picker -->
-                                <Grid ColumnDefinitions="*, Auto">
+                                <!-- File / folder picker -->
+                                <Grid ColumnDefinitions="*, Auto, Auto">
                                     <TextBox Name="TxtSelectedPath"
                                              Grid.Column="0"
                                              IsReadOnly="True"
@@ -100,6 +100,13 @@
                                             Content="Browse..."
                                             Classes="BtnSecondary"
                                             Click="BtnBrowse_Click"/>
+                                    <Button Name="BtnBrowseFolder"
+                                            Grid.Column="2"
+                                            Content="Folder..."
+                                            Classes="BtnSecondary"
+                                            Margin="6,0,0,0"
+                                            IsVisible="False"
+                                            Click="BtnBrowseFolder_Click"/>
                                 </Grid>
 
                                 <!-- Rename warning (filename != amdxcffx64.dll) -->
@@ -138,6 +145,12 @@
                                             <TextBlock Grid.Row="3" Grid.Column="0" Text="SHA-256:" FontSize="12" Foreground="{StaticResource BrTextSecondary}"/>
                                             <TextBlock Grid.Row="3" Grid.Column="1" Name="TxtSha256" FontSize="10" FontFamily="Consolas, Monospace" TextWrapping="Wrap" Foreground="{StaticResource BrTextSecondary}"/>
                                         </Grid>
+                                        <TextBlock Name="TxtIncludedFiles"
+                                                   FontSize="11"
+                                                   TextWrapping="Wrap"
+                                                   Foreground="{StaticResource BrTextPrimary}"
+                                                   IsVisible="False"
+                                                   Margin="0,4,0,0"/>
                                         <TextBlock Name="TxtModelHint"
                                                    FontSize="11"
                                                    TextWrapping="Wrap"

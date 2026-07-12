@@ -147,16 +147,16 @@ FSR 4 is split across two DLLs, and this fork lets you swap either one per game:
 | Component | File | What it is |
 |---|---|---|
 | **FSR4 Custom DLL** | `amdxcffx64.dll` | The driver-side DLL containing the FSR 4 ML models. File version `2.3.x` = FSR 4.1.x INT8-capable (runs on RDNA 2/3). |
-| **FSR4 Custom SDK** | `amd_fidelityfx_upscaler_dx12.dll` | The FSR SDK upscaler DLL that games/OptiScaler talk to. Each OptiScaler release bundles one; this component overrides it. |
+| **FSR4 Custom SDK** | `amd_fidelityfx_upscaler_dx12.dll` + companions | An FSR SDK **package**: the upscaler plus, when present, `amd_fidelityfx_framegeneration_dx12.dll` and other companion DLLs. Each OptiScaler release bundles these; this component overrides them so you can run a newer FSR release immediately. |
 
 AMD ships FSR 4.1 officially for RDNA 3 (driver 26.6.2+), while RDNA 2 support is not expected before ~early 2027. OptiScaler, however, checks the **game folder first** for `amdxcffx64.dll` (since v0.7.7-pre9 / stable v0.7.8) before falling back to the driver store — so a newer INT8-capable DLL placed next to the game executable can enable FSR 4.1.x on older GPUs.
 
 How to use them:
 
 1. Open **Settings → Manage Cache → FSR4 Custom DLL** (or **FSR4 Custom SDK**) and click **Import DLL**.
-2. Browse to your local DLL. The app validates that it is a 64-bit DLL, shows its **file version**, **SHA-256**, and whether an **Authenticode signature** is present, then stores it in the local component cache. Re-import newer builds at any time — versions are kept side by side.
-3. In a game's **Manage** window, pick the imported version in the matching selector and install. The app backs up any existing file, copies the imported one next to the game executable, and sets `[FSR] UpscalerIndex=0` / `Fsr4Update=true` in `OptiScaler.ini` so the FSR 4 backend is engaged on non-RDNA4 GPUs.
-4. Uninstalling (or re-installing with the selector on **None**) restores the backup and reverts the ini keys.
+2. Browse to your local file. For the **Custom SDK** you can point at an **extracted SDK folder or the SDK archive (.zip/.7z) directly** — all known FSR SDK DLLs found inside (subfolders included) are imported as one package; the upscaler is required, companions are optional, and only 64-bit copies are taken (a copy from a `signed` folder wins when there are duplicates). The app validates each DLL, shows the **file version**, **SHA-256**, and **Authenticode signature** presence, then stores everything in the local component cache. Re-import newer builds at any time — versions are kept side by side.
+3. In a game's **Manage** window, pick the imported version in the matching selector and install. The app backs up any existing files, copies the imported ones next to the game executable, and sets `[FSR] UpscalerIndex=0` / `Fsr4Update=true` in `OptiScaler.ini` so the FSR 4 backend is engaged on non-RDNA4 GPUs.
+4. Uninstalling (or re-installing with the selector on **None**) restores backups — including putting back the SDK DLLs bundled with the installed OptiScaler release — and reverts the ini keys.
 
 Notes:
 
