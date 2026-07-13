@@ -142,19 +142,25 @@ Full interface translation in **14 languages**:
 
 > **This fork adds "bring-your-own-DLL" features for FSR 4.x.** The repository contains **no AMD binaries and no links to any**, and the app **never downloads** these DLLs. You must supply files you obtained yourself (for example from an AMD driver installation you own). They are AMD software; sourcing them is entirely your responsibility.
 
-FSR 4 is split across two DLLs, and this fork lets you swap either one per game:
+This fork lets you swap two independent pieces of the FSR 4 stack per game:
 
-| Component | File | What it is |
+| Component | What it is | What you supply |
 |---|---|---|
-| **FSR4 Custom DLL** | `amdxcffx64.dll` | The driver-side DLL containing the FSR 4 ML models. File version `2.3.x` = FSR 4.1.x INT8-capable (runs on RDNA 2/3). |
-| **FSR4 Custom SDK** | `amd_fidelityfx_upscaler_dx12.dll` + companions | An FSR SDK **package**: the upscaler plus, when present, `amd_fidelityfx_framegeneration_dx12.dll` and other companion DLLs. Each OptiScaler release bundles these; this component overrides them so you can run a newer FSR release immediately. |
+| **FSR4 Custom DLL** | The driver-side DLL holding the FSR 4 **ML models**. File version `2.3.x` = FSR 4.1.x INT8-capable (runs on RDNA 2/3). | A single `amdxcffx64.dll`. |
+| **FSR4 Custom SDK** | The FSR **SDK** OptiScaler calls into — a *set* of DLLs, not just the upscaler. Each OptiScaler release bundles a copy of this SDK; importing your own overrides it so you can run a newer FSR release immediately, on any GPU. | The whole SDK, imported from its **`.zip`/`.7z` archive or an extracted folder**. |
+
+An FSR SDK is a **package of DLLs**. The importer looks for all of these (the upscaler is required; the rest are imported when present):
+
+`amd_fidelityfx_upscaler_dx12.dll` (required) · `amd_fidelityfx_framegeneration_dx12.dll` (frame generation) · `amd_fidelityfx_dx12.dll` · `amd_fidelityfx_loader_dx12.dll` · `amd_fidelityfx_denoiser_dx12.dll` · `amd_fidelityfx_radiancecache_dx12.dll` · `amd_fidelityfx_vk.dll`
+
+Subfolders are searched, 32-bit copies are skipped, and if the same DLL appears more than once a copy from a `signed` path wins. Everything found is imported as **one versioned package** (labelled by the upscaler's file version) and installed together.
 
 AMD ships FSR 4.1 officially for RDNA 3 (driver 26.6.2+), while RDNA 2 support is not expected before ~early 2027. OptiScaler, however, checks the **game folder first** for `amdxcffx64.dll` (since v0.7.7-pre9 / stable v0.7.8) before falling back to the driver store — so a newer INT8-capable DLL placed next to the game executable can enable FSR 4.1.x on older GPUs.
 
 How to use them:
 
-1. Open **Settings → Manage Cache → FSR4 Custom DLL** (or **FSR4 Custom SDK**) and click **Import DLL**.
-2. Browse to your local file. For the **Custom SDK** you can point at an **extracted SDK folder or the SDK archive (.zip/.7z) directly** — all known FSR SDK DLLs found inside (subfolders included) are imported as one package; the upscaler is required, companions are optional, and only 64-bit copies are taken (a copy from a `signed` folder wins when there are duplicates). The app validates each DLL, shows the **file version**, **SHA-256**, and **Authenticode signature** presence, then stores everything in the local component cache. Re-import newer builds at any time — versions are kept side by side.
+1. Open **Settings → Manage Cache**. For the model DLL choose **FSR4 Custom DLL** → **Import DLL…**; for the SDK choose **FSR4 Custom SDK** → **Import SDK (folder or archive)…**.
+2. Select your source. The **Custom DLL** takes a single `amdxcffx64.dll`. The **Custom SDK** dialog offers two pickers — **Select archive…** (the SDK `.zip`/`.7z`) and **Select folder…** (an already-extracted SDK) — and imports every recognised DLL it finds (see the list above). The app validates each DLL, shows the upscaler's **file version**, **SHA-256**, and **Authenticode signature** presence plus the full list of DLLs it will import, then stores everything in the local component cache. Re-import newer builds at any time — versions are kept side by side.
 3. In a game's **Manage** window, pick the imported version in the matching selector and install. The app backs up any existing files, copies the imported ones next to the game executable, and sets `[FSR] UpscalerIndex=0` / `Fsr4Update=true` in `OptiScaler.ini` so the FSR 4 backend is engaged on non-RDNA4 GPUs.
 4. Uninstalling (or re-installing with the selector on **None**) restores backups — including putting back the SDK DLLs bundled with the installed OptiScaler release — and reverts the ini keys.
 
@@ -176,7 +182,7 @@ Everything this app does to a game folder is plain file operations you can repli
 | NukemFG | `dlssg_to_fsr3_amd_is_better.dll` | `[General] FGType=nukems` | Restored/deleted via manifest |
 | FSR4 INT8 (Extras) | `amd_fidelityfx_upscaler_dx12.dll` (community 4.0.2c INT8 build) | — | Cleaned on uninstall |
 | FSR4 Custom DLL | your `amdxcffx64.dll` | `[FSR] UpscalerIndex=0`, `Fsr4Update=true` | Backup restored, keys reverted to `auto` |
-| FSR4 Custom SDK | your SDK package (`amd_fidelityfx_upscaler_dx12.dll` + companions) | `[FSR] UpscalerIndex=0`, `Fsr4Update=true` | Backups restored, OptiScaler's bundled DLLs put back, keys reverted |
+| FSR4 Custom SDK | every DLL of your imported SDK package (upscaler + frame generation + companions) | `[FSR] UpscalerIndex=0`, `Fsr4Update=true` | Backups restored, OptiScaler's bundled DLLs put back, keys reverted |
 | OptiPatcher | `plugins/OptiPatcher.asi` | `LoadAsiPlugins=true` | Removed on uninstall |
 
 Bookkeeping lives outside the game folder, in the app's data directory (`%APPDATA%/OptiscalerClient` on Windows, `~/.config/OptiscalerClient` on Linux):
@@ -192,7 +198,7 @@ Every selector in the game manager has a "?" tooltip stating exactly what it wil
 
 All builds happen on GitHub Actions — nothing is built locally:
 
-- **CI** (`.github/workflows/ci.yml`): every push/PR to `main` restores, builds (win-x64 + linux-x64), and runs tests if a test project exists.
+- **CI** (`.github/workflows/ci.yml`): every push/PR to `main` restores, builds (win-x64 + linux-x64), and runs the xUnit test suite (`tests/OptiscalerClient.Tests`).
 - **Releases** (`.github/workflows/release.yml`): pushing a tag matching `v*` publishes self-contained single-file builds for `win-x64`, `linux-x64`, `osx-x64`, and `osx-arm64`, zips them as `OptiscalerClient-<version>-<rid>.zip`, and attaches them to an auto-created GitHub Release.
 
 To cut a release:

@@ -475,10 +475,13 @@ namespace OptiscalerClient.Views
             var importRow = new Grid { ColumnDefinitions = new ColumnDefinitions("*,Auto"), Margin = new Thickness(0, 0, 0, 16) };
             var btnImport = new Button
             {
-                Content = "Import DLL",
+                Content = isSdk ? "Import SDK (folder or archive)…" : "Import DLL…",
                 Padding = new Thickness(12, 5),
                 FontSize = 11
             };
+            ToolTip.SetTip(btnImport, isSdk
+                ? "Import a full FSR SDK from its .zip/.7z archive or an extracted folder. Every recognised FSR SDK DLL inside (upscaler + frame generation + companions, subfolders included) is imported as one package."
+                : "Import a single amdxcffx64.dll (the FSR 4 ML-model DLL).");
             btnImport.Classes.Add("BtnBase");
             if (isSdk) btnImport.Click += BtnImportCustomFsrSdk_Click;
             else btnImport.Click += BtnImportCustomFsr4_Click;
