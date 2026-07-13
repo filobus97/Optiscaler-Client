@@ -109,17 +109,36 @@ namespace OptiscalerClient.Views
                 legal.Text = "This tool does not provide the DLLs. You must supply files you obtained yourself. " +
                              "The FSR SDK DLLs are AMD software and are never downloaded, bundled, or linked by this application.";
             if (title != null) title.Text = "Import Custom FSR SDK";
-            if (subtitle != null) subtitle.Text = "FSR SDK package (upscaler + companion DLLs)";
+            if (subtitle != null) subtitle.Text = "FSR SDK package (upscaler + frame generation + companions)";
             if (instruction != null)
-                instruction.Text = "Point to an extracted FSR SDK folder, the SDK archive (.zip/.7z), or a single DLL. " +
-                                   "All known FSR SDK DLLs found inside (upscaler, frame generation, and companions — " +
-                                   "subfolders included) are imported as one package and installed together, replacing " +
-                                   "the copies bundled with your OptiScaler release. amd_fidelityfx_upscaler_dx12.dll " +
-                                   "is required; the rest are optional. Note: the downloadable \"FSR4 INT8\" component " +
-                                   "installs the same upscaler file — use one or the other per game, not both.";
+                instruction.Text = "An FSR SDK is a set of DLLs, not just one. Point to the SDK archive (.zip/.7z) or " +
+                                   "an extracted folder and every recognised FSR SDK DLL inside is imported as a single " +
+                                   "package — subfolders are searched, 32-bit copies are skipped, and a ‘signed’ copy " +
+                                   "wins if the same DLL appears twice. Recognised: amd_fidelityfx_upscaler_dx12.dll " +
+                                   "(required), amd_fidelityfx_framegeneration_dx12.dll, amd_fidelityfx_dx12.dll, " +
+                                   "amd_fidelityfx_loader_dx12.dll, amd_fidelityfx_denoiser_dx12.dll, " +
+                                   "amd_fidelityfx_radiancecache_dx12.dll, amd_fidelityfx_vk.dll. On install the whole set " +
+                                   "replaces the copies bundled with your OptiScaler release. Note: the downloadable " +
+                                   "“FSR4 INT8” component installs the same upscaler file — use one or the other per game.";
 
+            // Relabel the pickers so they represent the SDK (multi-file) capability
+            // rather than a single "Browse..." for one DLL.
+            var btnArchive = this.FindControl<Button>("BtnBrowse");
+            if (btnArchive != null)
+            {
+                btnArchive.Content = "Select archive…";
+                ToolTip.SetTip(btnArchive, "Pick the FSR SDK .zip / .7z archive (or a single DLL). Matching DLLs are extracted and imported together.");
+            }
             var btnFolder = this.FindControl<Button>("BtnBrowseFolder");
-            if (btnFolder != null) btnFolder.IsVisible = true;
+            if (btnFolder != null)
+            {
+                btnFolder.IsVisible = true;
+                btnFolder.Content = "Select folder…";
+                ToolTip.SetTip(btnFolder, "Pick an already-extracted FSR SDK folder. All recognised DLLs in it (and its subfolders) are imported together.");
+            }
+
+            var txtPath = this.FindControl<TextBox>("TxtSelectedPath");
+            if (txtPath != null) txtPath.Watermark = "No SDK archive or folder selected…";
         }
 
         private async void BtnBrowse_Click(object? sender, RoutedEventArgs e)
