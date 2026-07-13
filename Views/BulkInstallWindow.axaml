@@ -272,6 +272,62 @@
                                               VerticalContentAlignment="Center"/>
                                 </StackPanel>
 
+                                <!-- FSR4 Custom DLL (bring-your-own amdxcffx64.dll) -->
+                                <StackPanel Spacing="5">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <TextBlock Text="FSR4 Custom DLL:"
+                                                   Foreground="{StaticResource BrTextSecondary}"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"/>
+                                        <Border Background="{StaticResource BrBgElevated}"
+                                                BorderBrush="{StaticResource BrBorderSubtle}"
+                                                BorderThickness="1" CornerRadius="8"
+                                                Width="14" Height="14"
+                                                ToolTip.ShowDelay="100" Cursor="Help"
+                                                ToolTip.Tip="Installs your imported amdxcffx64.dll (FSR 4 ML-model DLL) into every selected game, next to the exe, and sets [FSR] UpscalerIndex=0 / Fsr4Update=true. Import it first under Settings → Manage Cache → FSR4 Custom DLL. This tool does not provide the DLL.">
+                                            <TextBlock Text="?" Foreground="{StaticResource BrTextSecondary}"
+                                                       FontSize="9" FontWeight="Bold"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Margin="0,-1,0,0"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <ComboBox Name="CmbCustomFsr4Version"
+                                              HorizontalAlignment="Stretch"
+                                              Classes="BtnSelector"
+                                              Padding="8,0,24,0"
+                                              HorizontalContentAlignment="Left"
+                                              Background="{StaticResource BrBgBase}"
+                                              VerticalContentAlignment="Center"/>
+                                </StackPanel>
+
+                                <!-- FSR4 Custom SDK (bring-your-own SDK package) -->
+                                <StackPanel Spacing="5">
+                                    <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">
+                                        <TextBlock Text="FSR4 Custom SDK:"
+                                                   Foreground="{StaticResource BrTextSecondary}"
+                                                   FontSize="12"
+                                                   VerticalAlignment="Center"/>
+                                        <Border Background="{StaticResource BrBgElevated}"
+                                                BorderBrush="{StaticResource BrBorderSubtle}"
+                                                BorderThickness="1" CornerRadius="8"
+                                                Width="14" Height="14"
+                                                ToolTip.ShowDelay="100" Cursor="Help"
+                                                ToolTip.Tip="Installs your imported FSR SDK package (amd_fidelityfx_upscaler_dx12.dll + companions) into every selected game, replacing OptiScaler's bundled copies, and sets [FSR] UpscalerIndex=0 / Fsr4Update=true. Import from an SDK folder or archive under Settings → Manage Cache → FSR4 Custom SDK. Mutually exclusive with FSR4 INT8 (same upscaler file); the SDK wins. This tool does not provide the DLLs.">
+                                            <TextBlock Text="?" Foreground="{StaticResource BrTextSecondary}"
+                                                       FontSize="9" FontWeight="Bold"
+                                                       HorizontalAlignment="Center" VerticalAlignment="Center"
+                                                       Margin="0,-1,0,0"/>
+                                        </Border>
+                                    </StackPanel>
+                                    <ComboBox Name="CmbCustomFsrSdkVersion"
+                                              HorizontalAlignment="Stretch"
+                                              Classes="BtnSelector"
+                                              Padding="8,0,24,0"
+                                              HorizontalContentAlignment="Left"
+                                              Background="{StaticResource BrBgBase}"
+                                              VerticalContentAlignment="Center"/>
+                                </StackPanel>
+
                                 <!-- OptiPatcher -->
                                 <StackPanel Spacing="5">
                                     <StackPanel Orientation="Horizontal" Spacing="6" VerticalAlignment="Center">

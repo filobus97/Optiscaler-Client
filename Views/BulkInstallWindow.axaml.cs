@@ -126,6 +126,14 @@ public partial class BulkInstallWindow : Window
         // Populate FSR4 INT8 versions
         PopulateExtrasComboBox();
 
+        // Populate custom (bring-your-own) FSR4 DLL and SDK versions
+        PopulateLocalComboBox("CmbCustomFsr4Version",
+            _componentService.GetDownloadedCustomFsr4Versions(),
+            _componentService.Config.DefaultCustomFsr4DllVersion);
+        PopulateLocalComboBox("CmbCustomFsrSdkVersion",
+            _componentService.GetDownloadedCustomFsrSdkVersions(),
+            _componentService.Config.DefaultCustomFsrSdkVersion);
+
         // Populate OptiPatcher versions
         PopulateOptiPatcherComboBox();
 
@@ -498,6 +506,19 @@ public partial class BulkInstallWindow : Window
         bool installOptiPatcher = !string.IsNullOrEmpty(selectedOptiPatcherVersion) &&
                                   !selectedOptiPatcherVersion.Equals("none", StringComparison.OrdinalIgnoreCase);
 
+        // Get selected custom (bring-your-own) FSR4 DLL and SDK versions
+        var selectedCustomFsr4Version = (this.FindControl<ComboBox>("CmbCustomFsr4Version")?.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+        bool installCustomFsr4 = !string.IsNullOrEmpty(selectedCustomFsr4Version) &&
+                                 !selectedCustomFsr4Version.Equals("none", StringComparison.OrdinalIgnoreCase);
+        var selectedCustomFsrSdkVersion = (this.FindControl<ComboBox>("CmbCustomFsrSdkVersion")?.SelectedItem as ComboBoxItem)?.Tag?.ToString();
+        bool installCustomFsrSdk = !string.IsNullOrEmpty(selectedCustomFsrSdkVersion) &&
+                                   !selectedCustomFsrSdkVersion.Equals("none", StringComparison.OrdinalIgnoreCase);
+
+        // The custom SDK and the FSR4 INT8 extras install the same upscaler file —
+        // the custom SDK wins, matching the per-game manager's mutual exclusion.
+        if (installCustomFsrSdk)
+            injectExtras = false;
+
         // Get selected profile
         OptiScalerProfile? selectedProfile = null;
         if (cmbProfile?.SelectedItem is ComboBoxItem profileItem && profileItem.Tag is OptiScalerProfile prof)
@@ -590,6 +611,44 @@ public partial class BulkInstallWindow : Window
                         gameItem.Game.Fsr4ExtraVersion = selectedExtrasVersion;
                         DebugWindow.Log($"[BulkInstall] Copied FSR4 INT8 DLL to {destPath} for {gameItem.Name}");
                     });
+                }
+
+                // ── Custom FSR SDK package (bring-your-own, local-only) ─────────────
+                if (installCustomFsrSdk && !string.IsNullOrEmpty(selectedCustomFsrSdkVersion))
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (txtProgressStatus != null) txtProgressStatus.Text = $"Installing custom FSR SDK for {gameItem.Name}...";
+                        if (progressBar != null) progressBar.IsIndeterminate = true;
+                    });
+                    try
+                    {
+                        var sdkCacheDir = _componentService.GetCustomFsrSdkCachePath(selectedCustomFsrSdkVersion);
+                        await Task.Run(() => _installService.InstallCustomFsrSdk(gameItem.Game, sdkCacheDir, selectedCustomFsrSdkVersion));
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugWindow.Log($"[BulkInstall] Custom FSR SDK install failed for {gameItem.Name}: {ex.Message}");
+                    }
+                }
+
+                // ── Custom FSR4 DLL amdxcffx64.dll (bring-your-own, local-only) ─────
+                if (installCustomFsr4 && !string.IsNullOrEmpty(selectedCustomFsr4Version))
+                {
+                    Dispatcher.UIThread.Post(() =>
+                    {
+                        if (txtProgressStatus != null) txtProgressStatus.Text = $"Installing custom FSR4 DLL for {gameItem.Name}...";
+                        if (progressBar != null) progressBar.IsIndeterminate = true;
+                    });
+                    try
+                    {
+                        var dllPath = _componentService.GetCustomFsr4DllPath(selectedCustomFsr4Version);
+                        await Task.Run(() => _installService.InstallCustomFsr4Dll(gameItem.Game, dllPath, selectedCustomFsr4Version));
+                    }
+                    catch (Exception ex)
+                    {
+                        DebugWindow.Log($"[BulkInstall] Custom FSR4 DLL install failed for {gameItem.Name}: {ex.Message}");
+                    }
                 }
 
                 // ── OptiPatcher ────────────────────────────────────────────────────
@@ -825,6 +884,47 @@ public partial class BulkInstallWindow : Window
             if (_ownerWindow is MainWindow mainWindow)
                 mainWindow.NavigateToProfiles();
         }
+    }
+
+    /// <summary>
+    /// Populates a combo with a "None" option followed by the given locally-imported
+    /// versions (bring-your-own components — never fetched from the network), and
+    /// selects the configured default if it still exists, otherwise None.
+    /// </summary>
+    private void PopulateLocalComboBox(string comboName, System.Collections.Generic.List<string> versions, string? configuredDefault)
+    {
+        var cmb = this.FindControl<ComboBox>(comboName);
+        if (cmb == null) return;
+
+        cmb.Items.Clear();
+
+        if (versions.Count == 0)
+        {
+            cmb.Items.Add(new ComboBoxItem { Content = "None imported", Tag = "none" });
+            cmb.SelectedIndex = 0;
+            cmb.IsEnabled = false;
+            return;
+        }
+        cmb.IsEnabled = true;
+
+        cmb.Items.Add(new ComboBoxItem { Content = "None", Tag = "none" });
+        foreach (var ver in versions)
+            cmb.Items.Add(new ComboBoxItem { Content = ver, Tag = ver });
+
+        int targetIndex = 0;
+        if (!string.IsNullOrEmpty(configuredDefault) &&
+            !configuredDefault.Equals("none", StringComparison.OrdinalIgnoreCase))
+        {
+            for (int i = 1; i < cmb.Items.Count; i++)
+            {
+                if (string.Equals((cmb.Items[i] as ComboBoxItem)?.Tag?.ToString(), configuredDefault, StringComparison.OrdinalIgnoreCase))
+                {
+                    targetIndex = i;
+                    break;
+                }
+            }
+        }
+        cmb.SelectedIndex = targetIndex;
     }
 
     /// <summary>
