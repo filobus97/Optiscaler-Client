@@ -1,0 +1,32 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <IsPackable>false</IsPackable>
+    <!-- Must match the InternalsVisibleTo name in the main csproj -->
+    <AssemblyName>Optiscaler-Client.Tests</AssemblyName>
+    <RootNamespace>OptiscalerClient.Tests</RootNamespace>
+
+    <!-- The main project is a self-contained app, so a project that references it
+         must be self-contained too. The RID is supplied on the command line
+         (dotnet test -r <rid>); single-file / ReadyToRun are publish-only and are
+         disabled here to keep test builds fast. -->
+    <SelfContained>true</SelfContained>
+    <PublishSingleFile>false</PublishSingleFile>
+    <PublishReadyToRun>false</PublishReadyToRun>
+    <EnableCompressionInSingleFile>false</EnableCompressionInSingleFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.NET.Test.Sdk" Version="17.11.1" />
+    <PackageReference Include="xunit" Version="2.9.2" />
+    <PackageReference Include="xunit.runner.visualstudio" Version="2.8.2" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\..\OptiscalerClient.csproj" />
+  </ItemGroup>
+
+</Project>

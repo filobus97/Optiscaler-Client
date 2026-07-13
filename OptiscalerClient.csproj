@@ -12,6 +12,9 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>assets\icon.ico</ApplicationIcon>
+    <!-- The test project lives under tests/ in the same tree; keep its sources
+         out of the app's default .cs/resource globs. -->
+    <DefaultItemExcludes>$(DefaultItemExcludes);tests\**</DefaultItemExcludes>
 
     <!-- Build Optimizations -->
     <PublishSingleFile>true</PublishSingleFile>

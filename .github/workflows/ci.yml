@@ -41,16 +41,10 @@ jobs:
         run: dotnet restore -r ${{ matrix.rid }}
 
       - name: Build
-        run: dotnet build -c Release -r ${{ matrix.rid }} --no-restore
+        run: dotnet build OptiscalerClient.csproj -c Release -r ${{ matrix.rid }} --no-restore
 
-      # The repo currently has no test project (InternalsVisibleTo names
-      # "Optiscaler-Client.Tests" but it is not committed). Run tests only
-      # when one appears so this step starts working automatically.
+      # Unit tests guard the risky pure logic (PE inspection, ini editing,
+      # version gate, SDK-package scan). The test project is self-contained and
+      # references the app, so it needs the same RID.
       - name: Test
-        shell: bash
-        run: |
-          if [ -n "$(find . -name '*Tests*.csproj' -not -path '*/bin/*' -not -path '*/obj/*' -print -quit)" ]; then
-            dotnet test -c Release
-          else
-            echo "No test project found - skipping tests."
-          fi
+        run: dotnet test tests/OptiscalerClient.Tests -c Release -r ${{ matrix.rid }}
