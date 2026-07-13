@@ -184,7 +184,7 @@ Bookkeeping lives outside the game folder, in the app's data directory (`%APPDAT
 - `Backups/<game-slug>/manifest.json` — exactly which files were created vs overwritten, with SHA-256 hashes; `Backups/<game-slug>/files/` holds the pre-install originals.
 - `Cache/<Component>/<version>/` — every downloaded or imported component version; imported DLL packages carry a `dll_info.json` with per-file versions, hashes, and signature info.
 
-Every selector in the game manager has a "?" tooltip stating exactly what it will do. Known limitation: **Bulk Install** does not yet offer the two custom (bring-your-own) components — use per-game Manage or Quick Install with configured defaults for those.
+Every selector in the game manager has a "?" tooltip stating exactly what it will do. The two custom (bring-your-own) components are available everywhere OptiScaler is: per-game **Manage**, **Quick Install** (via configured defaults), and **Bulk Install**.
 
 ---
 

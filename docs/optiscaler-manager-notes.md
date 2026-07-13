@@ -30,7 +30,6 @@ asset. A new frontend can reuse these `Services/` classes unchanged:
 
 ## Known limitations to carry into the redesign
 
-- **Bulk Install** does not offer the custom (bring-your-own) components.
 - The FSR4 selectors' mutual exclusion is enforced in the game manager, not in
   a shared model — a redesign should model "components that target the same
   file" as data, not per-screen glue.
